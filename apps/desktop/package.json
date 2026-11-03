@@ -1,0 +1,33 @@
+{
+  "name": "@cuelight/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cuelight desktop app: capture-proof spotlight overlay, hotkeys, playback, and the local bridge to the browser extension.",
+  "license": "MIT",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "postinstall": "install-electron",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "selftest": "electron-vite build && electron . --selftest",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cuelight/schema": "workspace:*",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.18.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "electron": "^45.2.0",
+    "electron-vite": "^6.0.0",
+    "lucide-react": "^1.66.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "vite": "^8.3.0"
+  }
+}

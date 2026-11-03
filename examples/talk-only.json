@@ -1,0 +1,14 @@
+{
+  "$schema": "../packages/schema/storyboard.schema.json",
+  "cuelight": 1,
+  "title": "Talk-only intro",
+  "description": "No targets: the card sits under the camera and you page with the hotkey. For talking-head intros or plain screen recordings.",
+  "language": "en",
+  "card": "top",
+  "steps": [
+    { "act": "manual", "say": "Hi, I'm going to show you how we record product demos without reading from a second screen." },
+    { "act": "manual", "say": "The lines sit right under the camera, so your eyes stay on the lens." },
+    { "act": "read", "say": "Reading steps move on by themselves once the bar fills up." },
+    { "act": "manual", "say": "And the recording never shows any of it.", "card": "bottom" }
+  ]
+}

@@ -1,0 +1,1903 @@
+{
+  "$id": "urn:cuelight:storyboard:1",
+  "title": "Cuelight storyboard",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "cuelight": {
+      "type": "number",
+      "const": 1,
+      "description": "Storyboard format version"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "language": {
+      "description": "BCP 47 tag of the spoken lines, e.g. en, zh-CN",
+      "type": "string"
+    },
+    "start": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "description": "Open this page when playback starts (if the tab is elsewhere)",
+          "type": "string",
+          "format": "uri"
+        },
+        "app": {
+          "description": "Bundle identifier of the app to bring forward",
+          "type": "string"
+        }
+      }
+    },
+    "pace": {
+      "type": "object",
+      "properties": {
+        "unitsPerSec": {
+          "default": 2,
+          "description": "Speech units per second (an English word = 1, a CJK character = 0.5)",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "leadSecs": {
+          "default": 1.2,
+          "description": "Extra time to start and finish a line",
+          "type": "number",
+          "minimum": 0
+        },
+        "minSecs": {
+          "default": 2.5,
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "card": {
+      "description": "Default card placement when a step has no spotlight",
+      "type": "string",
+      "enum": [
+        "auto",
+        "top",
+        "bottom"
+      ]
+    },
+    "steps": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "act": {
+            "type": "string",
+            "enum": [
+              "click",
+              "read",
+              "wait",
+              "manual"
+            ],
+            "description": "click: click inside the spotlight to advance. read: the bar fills while the cursor rests in the spotlight (or always, without a target). wait: until a condition or `secs`. manual: advance with the hotkey"
+          },
+          "say": {
+            "default": "",
+            "description": "The line to say. Empty = do it silently",
+            "type": "string"
+          },
+          "tag": {
+            "description": "Short action label above the line, e.g. \"Click Sign in\"",
+            "type": "string"
+          },
+          "how": {
+            "description": "Override the automatic \"how to do this\" hint",
+            "type": "string"
+          },
+          "target": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "dom"
+                    },
+                    "url": {
+                      "description": "Only on pages whose URL matches this glob (* is a wildcard)",
+                      "type": "string"
+                    },
+                    "within": {
+                      "description": "Search inside the first visible match of this query",
+                      "type": "object",
+                      "properties": {
+                        "testId": {
+                          "description": "Value of data-testid (also data-test, data-cy, data-qa)",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "description": "ARIA role, explicit or implicit (button, link, textbox, heading, ...)",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "description": "Accessible name, used with role",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "text": {
+                          "description": "Visible text. Alone: the innermost element with this text. With other fields: a has-text filter",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "css": {
+                          "description": "CSS selector",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "nth": {
+                          "description": "Pick the n-th visible match (default 0)",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "closest": {
+                          "description": "After matching, climb to the closest ancestor matching this CSS selector",
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "testId": {
+                      "description": "Value of data-testid (also data-test, data-cy, data-qa)",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "role": {
+                      "description": "ARIA role, explicit or implicit (button, link, textbox, heading, ...)",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "description": "Accessible name, used with role",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "exact": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "exact"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "re": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "flags": {
+                              "type": "string",
+                              "pattern": "^[dgimsuvy]*$"
+                            }
+                          },
+                          "required": [
+                            "re"
+                          ]
+                        }
+                      ]
+                    },
+                    "text": {
+                      "description": "Visible text. Alone: the innermost element with this text. With other fields: a has-text filter",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "exact": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "exact"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "re": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "flags": {
+                              "type": "string",
+                              "pattern": "^[dgimsuvy]*$"
+                            }
+                          },
+                          "required": [
+                            "re"
+                          ]
+                        }
+                      ]
+                    },
+                    "css": {
+                      "description": "CSS selector",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "nth": {
+                      "description": "Pick the n-th visible match (default 0)",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "closest": {
+                      "description": "After matching, climb to the closest ancestor matching this CSS selector",
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ax"
+                    },
+                    "app": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Bundle identifier, e.g. com.apple.finder"
+                    },
+                    "window": {
+                      "description": "Window title",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "exact": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "exact"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "re": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "flags": {
+                              "type": "string",
+                              "pattern": "^[dgimsuvy]*$"
+                            }
+                          },
+                          "required": [
+                            "re"
+                          ]
+                        }
+                      ]
+                    },
+                    "role": {
+                      "description": "AXRole, e.g. AXButton",
+                      "type": "string"
+                    },
+                    "subrole": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "exact": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "exact"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "re": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "flags": {
+                              "type": "string",
+                              "pattern": "^[dgimsuvy]*$"
+                            }
+                          },
+                          "required": [
+                            "re"
+                          ]
+                        }
+                      ],
+                      "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                    },
+                    "identifier": {
+                      "description": "AXIdentifier",
+                      "type": "string"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "exact": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "exact"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "re": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "flags": {
+                              "type": "string",
+                              "pattern": "^[dgimsuvy]*$"
+                            }
+                          },
+                          "required": [
+                            "re"
+                          ]
+                        }
+                      ],
+                      "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                    },
+                    "path": {
+                      "description": "Ancestor path from the window down",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "exact": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "exact"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "re": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "flags": {
+                                    "type": "string",
+                                    "pattern": "^[dgimsuvy]*$"
+                                  }
+                                },
+                                "required": [
+                                  "re"
+                                ]
+                              }
+                            ],
+                            "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                          },
+                          "identifier": {
+                            "type": "string"
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "role"
+                        ]
+                      }
+                    },
+                    "nth": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "app"
+                  ],
+                  "description": "macOS Accessibility element (resolved by the native helper)"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "visual"
+                    },
+                    "app": {
+                      "description": "Search inside this app's front window; omit to search the screen",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Text to find with on-device OCR",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "exact": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "exact"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "re": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "flags": {
+                              "type": "string",
+                              "pattern": "^[dgimsuvy]*$"
+                            }
+                          },
+                          "required": [
+                            "re"
+                          ]
+                        }
+                      ]
+                    },
+                    "image": {
+                      "description": "Template image, path relative to the storyboard file or a data: URI",
+                      "type": "string"
+                    },
+                    "threshold": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "box": {
+                      "description": "Spotlight box relative to the found anchor's top-left, in points",
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      ],
+                      "items": false,
+                      "minItems": 4,
+                      "maxItems": 4
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "region"
+                    },
+                    "relativeTo": {
+                      "default": "screen",
+                      "type": "string",
+                      "enum": [
+                        "screen",
+                        "window"
+                      ]
+                    },
+                    "app": {
+                      "description": "With relativeTo=window: bundle identifier of the app",
+                      "type": "string"
+                    },
+                    "display": {
+                      "description": "With relativeTo=screen: display index, 0 = primary",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "rect": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      ],
+                      "items": false,
+                      "minItems": 4,
+                      "maxItems": 4
+                    },
+                    "units": {
+                      "default": "pt",
+                      "type": "string",
+                      "enum": [
+                        "pt",
+                        "fraction"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "rect"
+                  ]
+                }
+              ]
+            }
+          },
+          "until": {
+            "type": "object",
+            "properties": {
+              "appear": {
+                "description": "Done when this target shows up",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "dom"
+                        },
+                        "url": {
+                          "description": "Only on pages whose URL matches this glob (* is a wildcard)",
+                          "type": "string"
+                        },
+                        "within": {
+                          "description": "Search inside the first visible match of this query",
+                          "type": "object",
+                          "properties": {
+                            "testId": {
+                              "description": "Value of data-testid (also data-test, data-cy, data-qa)",
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "role": {
+                              "description": "ARIA role, explicit or implicit (button, link, textbox, heading, ...)",
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "name": {
+                              "description": "Accessible name, used with role",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "exact": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "exact"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "re": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "flags": {
+                                      "type": "string",
+                                      "pattern": "^[dgimsuvy]*$"
+                                    }
+                                  },
+                                  "required": [
+                                    "re"
+                                  ]
+                                }
+                              ]
+                            },
+                            "text": {
+                              "description": "Visible text. Alone: the innermost element with this text. With other fields: a has-text filter",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "exact": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "exact"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "re": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "flags": {
+                                      "type": "string",
+                                      "pattern": "^[dgimsuvy]*$"
+                                    }
+                                  },
+                                  "required": [
+                                    "re"
+                                  ]
+                                }
+                              ]
+                            },
+                            "css": {
+                              "description": "CSS selector",
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "nth": {
+                              "description": "Pick the n-th visible match (default 0)",
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "closest": {
+                              "description": "After matching, climb to the closest ancestor matching this CSS selector",
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          }
+                        },
+                        "testId": {
+                          "description": "Value of data-testid (also data-test, data-cy, data-qa)",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "description": "ARIA role, explicit or implicit (button, link, textbox, heading, ...)",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "description": "Accessible name, used with role",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "text": {
+                          "description": "Visible text. Alone: the innermost element with this text. With other fields: a has-text filter",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "css": {
+                          "description": "CSS selector",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "nth": {
+                          "description": "Pick the n-th visible match (default 0)",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "closest": {
+                          "description": "After matching, climb to the closest ancestor matching this CSS selector",
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "ax"
+                        },
+                        "app": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Bundle identifier, e.g. com.apple.finder"
+                        },
+                        "window": {
+                          "description": "Window title",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "role": {
+                          "description": "AXRole, e.g. AXButton",
+                          "type": "string"
+                        },
+                        "subrole": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ],
+                          "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                        },
+                        "identifier": {
+                          "description": "AXIdentifier",
+                          "type": "string"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ],
+                          "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                        },
+                        "path": {
+                          "description": "Ancestor path from the window down",
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "exact": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "exact"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "re": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "flags": {
+                                        "type": "string",
+                                        "pattern": "^[dgimsuvy]*$"
+                                      }
+                                    },
+                                    "required": [
+                                      "re"
+                                    ]
+                                  }
+                                ],
+                                "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                              },
+                              "identifier": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "role"
+                            ]
+                          }
+                        },
+                        "nth": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "app"
+                      ],
+                      "description": "macOS Accessibility element (resolved by the native helper)"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "visual"
+                        },
+                        "app": {
+                          "description": "Search inside this app's front window; omit to search the screen",
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "Text to find with on-device OCR",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "image": {
+                          "description": "Template image, path relative to the storyboard file or a data: URI",
+                          "type": "string"
+                        },
+                        "threshold": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "box": {
+                          "description": "Spotlight box relative to the found anchor's top-left, in points",
+                          "type": "array",
+                          "prefixItems": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "region"
+                        },
+                        "relativeTo": {
+                          "default": "screen",
+                          "type": "string",
+                          "enum": [
+                            "screen",
+                            "window"
+                          ]
+                        },
+                        "app": {
+                          "description": "With relativeTo=window: bundle identifier of the app",
+                          "type": "string"
+                        },
+                        "display": {
+                          "description": "With relativeTo=screen: display index, 0 = primary",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "rect": {
+                          "type": "array",
+                          "prefixItems": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
+                        },
+                        "units": {
+                          "default": "pt",
+                          "type": "string",
+                          "enum": [
+                            "pt",
+                            "fraction"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "rect"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "gone": {
+                "description": "Done when this target disappears",
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "dom"
+                        },
+                        "url": {
+                          "description": "Only on pages whose URL matches this glob (* is a wildcard)",
+                          "type": "string"
+                        },
+                        "within": {
+                          "description": "Search inside the first visible match of this query",
+                          "type": "object",
+                          "properties": {
+                            "testId": {
+                              "description": "Value of data-testid (also data-test, data-cy, data-qa)",
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "role": {
+                              "description": "ARIA role, explicit or implicit (button, link, textbox, heading, ...)",
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "name": {
+                              "description": "Accessible name, used with role",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "exact": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "exact"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "re": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "flags": {
+                                      "type": "string",
+                                      "pattern": "^[dgimsuvy]*$"
+                                    }
+                                  },
+                                  "required": [
+                                    "re"
+                                  ]
+                                }
+                              ]
+                            },
+                            "text": {
+                              "description": "Visible text. Alone: the innermost element with this text. With other fields: a has-text filter",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "exact": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "exact"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "re": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "flags": {
+                                      "type": "string",
+                                      "pattern": "^[dgimsuvy]*$"
+                                    }
+                                  },
+                                  "required": [
+                                    "re"
+                                  ]
+                                }
+                              ]
+                            },
+                            "css": {
+                              "description": "CSS selector",
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "nth": {
+                              "description": "Pick the n-th visible match (default 0)",
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "closest": {
+                              "description": "After matching, climb to the closest ancestor matching this CSS selector",
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          }
+                        },
+                        "testId": {
+                          "description": "Value of data-testid (also data-test, data-cy, data-qa)",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "description": "ARIA role, explicit or implicit (button, link, textbox, heading, ...)",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "description": "Accessible name, used with role",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "text": {
+                          "description": "Visible text. Alone: the innermost element with this text. With other fields: a has-text filter",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "css": {
+                          "description": "CSS selector",
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "nth": {
+                          "description": "Pick the n-th visible match (default 0)",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "closest": {
+                          "description": "After matching, climb to the closest ancestor matching this CSS selector",
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "ax"
+                        },
+                        "app": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Bundle identifier, e.g. com.apple.finder"
+                        },
+                        "window": {
+                          "description": "Window title",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "role": {
+                          "description": "AXRole, e.g. AXButton",
+                          "type": "string"
+                        },
+                        "subrole": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ],
+                          "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                        },
+                        "identifier": {
+                          "description": "AXIdentifier",
+                          "type": "string"
+                        },
+                        "description": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ],
+                          "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                        },
+                        "path": {
+                          "description": "Ancestor path from the window down",
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "exact": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "exact"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "re": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "flags": {
+                                        "type": "string",
+                                        "pattern": "^[dgimsuvy]*$"
+                                      }
+                                    },
+                                    "required": [
+                                      "re"
+                                    ]
+                                  }
+                                ],
+                                "description": "Plain string = case-insensitive substring; {exact} = whole text; {re, flags} = RegExp"
+                              },
+                              "identifier": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "role"
+                            ]
+                          }
+                        },
+                        "nth": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "app"
+                      ],
+                      "description": "macOS Accessibility element (resolved by the native helper)"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "visual"
+                        },
+                        "app": {
+                          "description": "Search inside this app's front window; omit to search the screen",
+                          "type": "string"
+                        },
+                        "text": {
+                          "description": "Text to find with on-device OCR",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "exact": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "exact"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "re": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "flags": {
+                                  "type": "string",
+                                  "pattern": "^[dgimsuvy]*$"
+                                }
+                              },
+                              "required": [
+                                "re"
+                              ]
+                            }
+                          ]
+                        },
+                        "image": {
+                          "description": "Template image, path relative to the storyboard file or a data: URI",
+                          "type": "string"
+                        },
+                        "threshold": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "box": {
+                          "description": "Spotlight box relative to the found anchor's top-left, in points",
+                          "type": "array",
+                          "prefixItems": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "region"
+                        },
+                        "relativeTo": {
+                          "default": "screen",
+                          "type": "string",
+                          "enum": [
+                            "screen",
+                            "window"
+                          ]
+                        },
+                        "app": {
+                          "description": "With relativeTo=window: bundle identifier of the app",
+                          "type": "string"
+                        },
+                        "display": {
+                          "description": "With relativeTo=screen: display index, 0 = primary",
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "rect": {
+                          "type": "array",
+                          "prefixItems": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          ],
+                          "items": false,
+                          "minItems": 4,
+                          "maxItems": 4
+                        },
+                        "units": {
+                          "default": "pt",
+                          "type": "string",
+                          "enum": [
+                            "pt",
+                            "fraction"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "rect"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "url": {
+                "description": "Done when the page URL matches this glob",
+                "type": "string"
+              },
+              "timeoutSecs": {
+                "description": "Give up waiting and move on after this long",
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          },
+          "optional": {
+            "description": "Skip this step if its target does not show up within 3 s",
+            "type": "boolean"
+          },
+          "secs": {
+            "description": "read: override the reading time. wait: fixed wait",
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "card": {
+            "description": "Card placement when there is no spotlight",
+            "type": "string",
+            "enum": [
+              "auto",
+              "top",
+              "bottom"
+            ]
+          },
+          "note": {
+            "description": "Author note, never shown on screen",
+            "type": "string"
+          }
+        },
+        "required": [
+          "act"
+        ]
+      }
+    }
+  },
+  "required": [
+    "cuelight",
+    "title",
+    "steps"
+  ]
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cuelight</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <span>Cuelight</span>
+      </header>
+
+      <section id="status" class="tile" data-state="connecting">
+        <span id="status-icon" class="status-icon" aria-hidden="true"></span>
+        <div>
+          <p id="status-title" class="title"></p>
+          <p id="status-hint" class="hint"></p>
+        </div>
+      </section>
+
+      <section id="pair" class="tile pair" hidden>
+        <form id="pair-form">
+          <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="Pairing code" />
+          <button id="pair-btn" type="submit" class="primary" disabled></button>
+        </form>
+      </section>
+
+      <section id="show" class="tile show" hidden>
+        <p id="show-title" class="title"></p>
+        <p id="show-step" class="hint"></p>
+        <button id="play" type="button" class="big primary wide" hidden><span id="play-icon"></span><span id="play-label"></span></button>
+        <div id="transport" class="transport">
+          <button id="prev" type="button" class="big"><span id="prev-icon"></span><span id="prev-label"></span></button>
+          <button id="next" type="button" class="big primary"><span id="next-label"></span><span id="next-icon"></span></button>
+        </div>
+        <div id="row" class="row">
+          <button id="hide" type="button" class="small"><span id="hide-icon"></span><span id="hide-label"></span></button>
+          <button id="stop" type="button" class="small"><span id="stop-icon"></span><span id="stop-label"></span></button>
+        </div>
+      </section>
+
+      <button id="unpair" type="button" class="link" hidden><span id="unpair-icon"></span><span id="unpair-label"></span></button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

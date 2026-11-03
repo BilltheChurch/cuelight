@@ -1,0 +1,82 @@
+{
+  "$schema": "../packages/schema/storyboard.schema.json",
+  "cuelight": 1,
+  "title": "TodoMVC quick tour",
+  "description": "A two-minute walk through the public TodoMVC demo. Exercises click, read, wait-for-typing, optional steps and a talk-only ending.",
+  "language": "en",
+  "start": { "url": "https://demo.playwright.dev/todomvc/#/" },
+  "steps": [
+    {
+      "act": "read",
+      "say": "This is TodoMVC, a tiny app we will use to try Cuelight.",
+      "target": [{ "kind": "dom", "css": ".todoapp h1" }, { "kind": "dom", "role": "heading", "name": { "exact": "todos" } }]
+    },
+    {
+      "act": "click",
+      "say": "Let's add a task.",
+      "tag": "Click the input",
+      "target": [
+        { "kind": "dom", "role": "textbox", "name": "What needs to be done?" },
+        { "kind": "dom", "css": "input.new-todo" }
+      ]
+    },
+    {
+      "act": "wait",
+      "say": "",
+      "tag": "Type: Rehearse the demo ⏎",
+      "how": "Type “Rehearse the demo” and press Enter",
+      "target": [{ "kind": "dom", "css": "input.new-todo" }],
+      "until": {
+        "appear": [{ "kind": "dom", "testId": "todo-title", "text": { "exact": "Rehearse the demo" } }],
+        "timeoutSecs": 120
+      }
+    },
+    {
+      "act": "read",
+      "say": "It shows up in the list right away.",
+      "target": [{ "kind": "dom", "testId": "todo-item", "text": { "exact": "Rehearse the demo" } }]
+    },
+    {
+      "act": "click",
+      "say": "Tick it off when it is done.",
+      "tag": "Tick the checkbox",
+      "target": [
+        {
+          "kind": "dom",
+          "within": { "testId": "todo-item", "text": { "exact": "Rehearse the demo" } },
+          "role": "checkbox",
+          "name": "Toggle Todo"
+        }
+      ]
+    },
+    {
+      "act": "read",
+      "say": "The counter keeps track of what is left.",
+      "target": [{ "kind": "dom", "testId": "todo-count" }]
+    },
+    {
+      "act": "click",
+      "say": "Filter to see what is finished.",
+      "tag": "Click Completed",
+      "target": [{ "kind": "dom", "role": "link", "name": { "exact": "Completed" } }]
+    },
+    {
+      "act": "click",
+      "say": "",
+      "tag": "Back to All",
+      "target": [{ "kind": "dom", "role": "link", "name": { "exact": "All" } }]
+    },
+    {
+      "act": "click",
+      "say": "And clear it away.",
+      "tag": "Click Clear completed",
+      "optional": true,
+      "target": [{ "kind": "dom", "role": "button", "name": "Clear completed" }, { "kind": "dom", "css": "button.clear-completed" }]
+    },
+    {
+      "act": "read",
+      "say": "That's the whole flow. Every line sat right next to where I clicked, and none of it was recorded.",
+      "card": "top"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "../packages/schema/storyboard.schema.json",
+  "cuelight": 1,
+  "title": "Wikipedia: scrolling and page changes",
+  "description": "Reads a long public article: the spotlight waits at the edge for off-screen targets, then follows a link to a new page.",
+  "language": "en",
+  "start": { "url": "https://en.wikipedia.org/wiki/Teleprompter" },
+  "steps": [
+    {
+      "act": "read",
+      "say": "This is the Wikipedia article on teleprompters.",
+      "target": [{ "kind": "dom", "css": "h1#firstHeading" }, { "kind": "dom", "role": "heading", "name": { "exact": "Teleprompter" } }]
+    },
+    {
+      "act": "read",
+      "say": "A spotlight can sit on any element: a heading, a picture, a button.",
+      "target": [{ "kind": "dom", "within": { "css": "#mw-content-text" }, "css": "figure" }]
+    },
+    {
+      "act": "read",
+      "say": "When the next target is further down, the light waits at the edge of the window until you scroll to it.",
+      "target": [{ "kind": "dom", "css": "#See_also" }, { "kind": "dom", "role": "heading", "name": { "exact": "See also" } }]
+    },
+    {
+      "act": "click",
+      "say": "Click through to another page and the prompter follows.",
+      "tag": "Click Cue card",
+      "target": [
+        { "kind": "dom", "css": ".mw-heading:has(#See_also) + ul a[href$=\"/wiki/Cue_card\"]" },
+        { "kind": "dom", "role": "link", "name": { "exact": "Cue card" } }
+      ]
+    },
+    {
+      "act": "read",
+      "say": "New page, same prompter. It picked up where we left off.",
+      "target": [{ "kind": "dom", "url": "https://en.wikipedia.org/wiki/Cue_card*", "css": "h1#firstHeading" }]
+    },
+    {
+      "act": "manual",
+      "say": "That's the tour. Press the hotkey to finish.",
+      "card": "top"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@cuelight/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cuelight browser extension (Chromium MV3): finds the element to spotlight in your own browser and reports where it is on screen.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cuelight/schema": "workspace:*",
+    "lucide": "^1.66.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.0",
+    "esbuild": "^0.28.0"
+  }
+}
