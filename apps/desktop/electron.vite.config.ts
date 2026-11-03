@@ -7,7 +7,9 @@ const bundleSchema = { externalizeDeps: { exclude: ['@cuelight/schema'] } }
 
 export default defineConfig({
   main: {
-    build: { ...bundleSchema },
+    // Everything else is bundled too, so a packaged app needs no node_modules (scripts/package.mjs).
+    // ws only tries these optional native speedups and works without them.
+    build: { externalizeDeps: false, rolldownOptions: { external: ['bufferutil', 'utf-8-validate', 'electron'] } },
   },
   preload: {
     build: {

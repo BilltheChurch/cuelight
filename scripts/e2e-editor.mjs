@@ -180,7 +180,7 @@ try {
   await page.locator('li', { hasText: 'Record me' }).locator('.toggle').click()
   await page.getByRole('link', { name: 'Completed' }).click()
   await page.getByRole('link', { name: 'All' }).click()
-  const bar = await until(`document.querySelector('.recording')?.textContent ?? ''`, (v) => /: All/.test(v), 'the last recorded action')
+  const bar = await until(`document.querySelector('.recording')?.textContent ?? ''`, (v) => /[:：] ?All/.test(v), 'the last recorded action')
   console.log('bar:', bar)
   await evalIn(`__t.click('.recording .primary')`)
   const tags = await until(`__t.text('.sl-item .text strong')`, (v) => Array.isArray(v) && v.length === 4, 'the draft in the editor')
