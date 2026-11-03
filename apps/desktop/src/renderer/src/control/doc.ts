@@ -3,7 +3,8 @@
  * so saving writes back what was opened), pure edits on it, and the undo history. No React or
  * Electron here, so it runs under unit tests.
  */
-import type { Act, Picked, StepInput, StoryboardInput } from '@cuelight/schema'
+import type { Act, StepInput, StoryboardInput } from '@cuelight/schema'
+import type { PickResult } from '../../../shared/types.ts'
 
 export type Doc = StoryboardInput
 export type StepDoc = StepInput
@@ -88,15 +89,17 @@ export function moveInList<T>(list: T[], from: number, to: number): T[] {
 
 /**
  * A pick replaces the step's target. A click step with no action label of its own gets one
- * naming the element, and picking for the first step remembers the page as the start page.
+ * naming the element, and picking for the first step remembers where the run starts: the page,
+ * or for a pick in an app (with no start page) that app, which playback brings forward.
  */
-export function applyPick(d: Doc, i: number, p: Picked, clickTag: (label: string) => string): { doc: Doc; startSet: boolean } {
+export function applyPick(d: Doc, i: number, p: PickResult, clickTag: (label: string) => string): { doc: Doc; startSet: 'url' | 'app' | null } {
   let out = setStepKey(d, i, 'target', p.locators)
   const st = out.steps[i]
   if (st.act === 'click' && !st.tag && p.label) out = setStepKey(out, i, 'tag', clickTag(p.label))
-  const startSet = i === 0 && !d.start?.url && /^https?:/.test(p.url)
-  if (startSet) out = setRootKey(out, 'start', { ...(d.start ?? {}), url: p.url })
-  return { doc: out, startSet }
+  if (i !== 0 || d.start?.url) return { doc: out, startSet: null }
+  if (/^https?:/.test(p.url)) return { doc: setRootKey(out, 'start', { ...(d.start ?? {}), url: p.url }), startSet: 'url' }
+  if (p.app && !d.start?.app) return { doc: setRootKey(out, 'start', { ...(d.start ?? {}), app: p.app }), startSet: 'app' }
+  return { doc: out, startSet: null }
 }
 
 /** Problems from parseStoryboard, split into the storyboard's own and each step's. */

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parseStoryboard, type StoryboardInput, type WebTarget } from '@cuelight/schema'
+import { parseStoryboard, type Locator, type Rect, type StoryboardInput, type WebTarget } from '@cuelight/schema'
 import { Player, type PlayerEvent } from '../src/main/player.ts'
 import type { OverlayCard } from '../src/shared/types.ts'
 
-function rig(input: StoryboardInput, opts: { connected?: boolean } = {}) {
+type Local = (l: Locator) => Rect | null | 'unsupported' | 'denied'
+const regionsOnly: Local = (l) => (l.kind === 'region' ? [l.rect[0], l.rect[1], l.rect[2], l.rect[3]] : 'unsupported')
+
+function rig(input: StoryboardInput, opts: { connected?: boolean; local?: Local } = {}) {
   const r = parseStoryboard(input)
   if (!r.ok) throw new Error(r.issues.join('\n'))
   let now = 1000
@@ -13,6 +16,7 @@ function rig(input: StoryboardInput, opts: { connected?: boolean } = {}) {
   const lights: unknown[] = []
   const progress: (number | null)[] = []
   const navigations: string[] = []
+  const activated: string[] = []
   let hidden = false
   const p = new Player({
     overlay: {
@@ -30,7 +34,8 @@ function rig(input: StoryboardInput, opts: { connected?: boolean } = {}) {
       status() {},
       connected: () => opts.connected ?? true,
     },
-    local: (l) => (l.kind === 'region' ? [l.rect[0], l.rect[1], l.rect[2], l.rect[3]] : 'unsupported'),
+    local: opts.local ?? regionsOnly,
+    activate: (a) => activated.push(a),
     lang: () => 'en',
     now: () => now,
     onEvent: (e) => log.push(e),
@@ -42,7 +47,7 @@ function rig(input: StoryboardInput, opts: { connected?: boolean } = {}) {
       p.tick(cursor)
     }
   }
-  return { p, log, targets, cards, lights, progress, navigations, run, advance: () => log.filter((e) => e.type === 'advance'), last: () => cards.at(-1) }
+  return { p, log, targets, cards, lights, progress, navigations, activated, run, advance: () => log.filter((e) => e.type === 'advance'), last: () => cards.at(-1) }
 }
 
 const dom = (css: string) => [{ kind: 'dom' as const, css }]
@@ -239,6 +244,71 @@ describe('Player', () => {
     // A normal run afterwards gets its preroll back.
     r.p.start(0)
     expect(r.p.phase).toBe('preroll')
+  })
+
+  it('follows a target in a desktop app as it moves, and advances on a click inside it', () => {
+    let where: Rect | null = null
+    const r = rig(
+      {
+        cuelight: 1,
+        title: 'T',
+        start: { app: 'com.example.notes' },
+        steps: [
+          { act: 'click', say: 'New note.', target: [{ kind: 'ax', app: 'com.example.notes', role: 'AXButton', title: 'New Note' }] },
+          { act: 'click', say: 'In the page.', target: dom('#go') },
+        ],
+      },
+      { local: (l) => (l.kind === 'ax' ? where : 'unsupported') },
+    )
+    r.p.start()
+    expect(r.activated).toEqual(['com.example.notes'])
+    r.p.next()
+    expect(r.p.wantsOsClicks).toBe(true)
+    // Not there yet: the helper is still looking.
+    r.run(100)
+    expect(r.lights.at(-1)).toBeNull()
+    expect(r.last()?.hintKind).toBe('waiting-page')
+    where = [100, 100, 30, 30]
+    r.run(32)
+    expect(r.lights.at(-1)).toEqual([100, 100, 30, 30])
+    expect(r.last()?.hintKind).toBeNull()
+    const n = r.lights.length
+    r.run(100)
+    expect(r.lights).toHaveLength(n)
+    where = [200, 100, 30, 30]
+    r.run(16)
+    expect(r.lights.at(-1)).toEqual([200, 100, 30, 30])
+
+    // A click somewhere else does nothing; one inside the light (padding included) advances.
+    r.p.osClick(120, 110)
+    r.run(400)
+    expect(r.p.i).toBe(0)
+    r.p.osClick(195, 95)
+    r.run(300)
+    expect(r.p.i).toBe(1)
+    expect(r.advance().at(-1)).toMatchObject({ from: 1, reason: 'click' })
+    // Page steps take their clicks from the extension, not the OS.
+    expect(r.p.wantsOsClicks).toBe(false)
+    r.p.osClick(10, 10)
+    r.run(300)
+    expect(r.p.i).toBe(1)
+  })
+
+  it('drops the light when a desktop target goes away, and asks for permission when the system says no', () => {
+    let where: Rect | null | 'denied' = [10, 10, 50, 20]
+    const r = rig(
+      { cuelight: 1, title: 'T', steps: [{ act: 'read', say: 'Look here.', target: [{ kind: 'ax', app: 'a.b', title: 'X' }] }] },
+      { local: () => where },
+    )
+    r.p.start(0, { single: true })
+    expect(r.lights.at(-1)).toEqual([10, 10, 50, 20])
+    where = null
+    r.run(16)
+    expect(r.lights.at(-1)).toBeNull()
+    where = 'denied'
+    r.run(16)
+    expect(r.last()?.hintKind).toBe('no-permission')
+    expect(r.last()?.hint).toBe('Allow Cuelight in System Settings, Privacy & Security first. Press ⌥⌘→ to skip')
   })
 
   it('unloads a storyboard that no longer validates', () => {

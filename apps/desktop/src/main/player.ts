@@ -1,8 +1,9 @@
 /**
  * Playback engine. Walks a storyboard step by step: tells the browser extension what to find,
- * puts the spotlight and the card on the overlay, and decides when a step is done
- * (a click inside the spotlight, a read timer that only runs while the cursor rests in the
- * light, a wait condition, or the hotkey). No Electron imports, so it runs under unit tests.
+ * asks the app for targets outside the browser, puts the spotlight and the card on the overlay,
+ * and decides when a step is done (a click inside the spotlight, a read timer that only runs
+ * while the cursor rests in the light, a wait condition, or the hotkey). No Electron imports,
+ * so it runs under unit tests.
  */
 import {
   contains,
@@ -44,6 +45,8 @@ export type PlayerEvent =
   /** A single-step rehearsal ended. `est`: how long the line takes to say, if it has one */
   | { type: 'rehearsed'; n: number; reason: AdvanceReason; secs: number; est: number | null }
   | { type: 'inside'; inside: boolean; by: 'page' | 'os' }
+  /** The light moved to or from a target outside the browser (page lights come as `rect` messages) */
+  | { type: 'light'; rect: Rect | null; from: 'local' | 'web' | null }
 
 export type PlayerDeps = {
   overlay: {
@@ -61,8 +64,14 @@ export type PlayerDeps = {
     status(s: { playing: boolean; n: number; total: number; title: string; loaded: boolean }): void
     connected(): boolean
   }
-  /** Resolves non-DOM locators (regions now; Accessibility and OCR in M5). */
-  local: (l: Locator) => Rect | null | 'unsupported'
+  /**
+   * Resolves non-DOM locators: screen regions, and through the native helper app elements,
+   * text on screen and window regions. Called every tick, so it answers from a cache.
+   * 'denied': the system has not allowed Cuelight to look (Accessibility, Screen Recording).
+   */
+  local: (l: Locator) => Rect | null | 'unsupported' | 'denied'
+  /** Bring an app forward (storyboard `start.app`) */
+  activate?: (app: string) => void
   lang: () => Lang
   now: () => number
   onEvent?: (e: PlayerEvent) => void
@@ -127,6 +136,7 @@ export class Player {
     this.seq++
     this.d.web.target(null)
     if (this.sb.start?.url && from === 0) this.d.web.navigate(this.sb.start.url)
+    if (this.sb.start?.app && from === 0) this.d.activate?.(this.sb.start.app)
     const lang = this.d.lang()
     const first = this.sb.steps[this.i]
     this.showCard({
@@ -219,6 +229,22 @@ export class Player {
     }
   }
 
+  /**
+   * A click anywhere on screen (from the native helper). It only counts for a click step whose
+   * light came from outside the browser; the extension reports clicks in web pages itself.
+   */
+  osClick(x: number, y: number) {
+    const l = this.light
+    if (this.step?.act !== 'click' || l.from !== 'local' || !l.found || !l.rect || this.advanceAt !== null) return
+    if (contains(inflate(l.rect, PAD), x, y)) this.advanceAt = this.d.now() + CLICK_SETTLE_MS
+  }
+
+  /** Whether the current step needs clicks outside the browser. */
+  get wantsOsClicks(): boolean {
+    const st = this.step
+    return st?.act === 'click' && !!st.target?.some((l) => !isDom(l))
+  }
+
   /** Call ~60 times a second with the real cursor position (screen points). */
   tick(cursor: { x: number; y: number }) {
     const now = this.d.now()
@@ -228,6 +254,7 @@ export class Player {
     this.cursor = cursor
     const st = this.step
     if (!st || !this.sb) return
+    if (st.target && (this.light.from !== 'web' || !this.light.found)) this.followLocal()
 
     const hole = this.light.rect && this.light.found && !this.light.offscreen ? inflate(this.light.rect, PAD) : null
     const osInside = !!hole && contains(hole, cursor.x, cursor.y)
@@ -364,16 +391,27 @@ export class Player {
     return { seq: this.seq, act: st.act, locators, until: hasUntil ? until : undefined }
   }
 
+  /** Targets outside the browser move and come and go on their own: follow them. */
+  private followLocal() {
+    const r = this.resolveLocal()
+    const l = this.light
+    if (r) {
+      if (l.from !== 'local' || !l.found || !l.rect || r.some((v, k) => Math.abs(v - l.rect![k]) > 0.5))
+        this.setLight({ rect: r, found: true, offscreen: null, from: 'local' })
+    } else if (l.from === 'local') this.setLight({ rect: null, found: false, offscreen: null, from: null })
+  }
+
   private resolveLocal(): Rect | null {
     for (const l of this.step?.target ?? []) {
       if (isDom(l)) continue
       const r = this.d.local(l)
-      if (r && r !== 'unsupported') return r
+      if (Array.isArray(r)) return r
     }
     return null
   }
 
   private setLight(l: Light) {
+    if (l.from === 'local' || this.light.from === 'local') this.d.onEvent?.({ type: 'light', rect: l.rect, from: l.from })
     this.light = l
     if (l.found) this.everFound = true
     this.d.overlay.light(l.rect)
@@ -386,11 +424,12 @@ export class Player {
     if (st?.target) {
       const kinds = st.target.map((l) => l.kind)
       const hasDom = kinds.includes('dom')
-      const anyLocal = st.target.some((l) => !isDom(l) && this.d.local(l) !== 'unsupported')
+      const locals = st.target.filter((l) => !isDom(l)).map((l) => this.d.local(l))
+      const anyLocal = locals.some((r) => r !== 'unsupported' && r !== 'denied')
       if (this.light.offscreen === 'below') h = 'scroll-down'
       else if (this.light.offscreen === 'above') h = 'scroll-up'
       else if (!this.light.found) {
-        if (!hasDom && !anyLocal) h = 'unsupported'
+        if (!hasDom && !anyLocal) h = locals.includes('denied') ? 'no-permission' : 'unsupported'
         else if (hasDom && !this.d.web.connected() && !anyLocal) h = 'no-browser'
         else h = now - this.startedAt > NOT_FOUND_AFTER_MS && !st.optional ? 'not-found' : 'waiting-page'
       }

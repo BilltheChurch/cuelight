@@ -1,6 +1,6 @@
 /**
- * Cuelight main process: wires the overlay, the player, the extension bridge, hotkeys and the
- * control window together.
+ * Cuelight main process: wires the overlay, the player, the extension bridge, the macOS helper,
+ * hotkeys and the control window together.
  *
  * Command line (also handy for scripted checks):
  *   --selftest [--selftest-out <dir>]   run the capture self-test, print JSON, exit 0 on pass
@@ -18,7 +18,7 @@
  *                           line: {"cmd":"eval","js":...} or {"cmd":"shot","path":...}; with
  *                           CUELIGHT_HEADLESS the window exists but is never shown (scripts/e2e-editor.mjs)
  */
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import readline from 'node:readline'
 import { BrowserWindow, app, dialog, globalShortcut, ipcMain, nativeTheme, safeStorage, screen, session, shell } from 'electron'
@@ -34,9 +34,11 @@ import {
   type Storyboard,
 } from '@cuelight/schema'
 import { AI_PROVIDERS, profileOf, type AiInfo, type AiRequest, type AiSetup } from '../shared/ai.ts'
-import type { AppState, DocPayload, SaveResult, SelftestResult } from '../shared/types.ts'
+import type { AppState, DocPayload, PickResult, SaveResult, SelftestResult } from '../shared/types.ts'
 import { KeyStore, pingAi, runAi, type AiTarget } from './ai.ts'
 import { Bridge } from './bridge.ts'
+import { Helper, HelperError } from './helper.ts'
+import { NativeTargets, axLocatorFor, axTitle, frontWindow, type AxNode, type LocalResult, type OcrLine, type WinInfo } from './native.ts'
 import { OverlayManager } from './overlay.ts'
 import { Player } from './player.ts'
 import { runSelftest } from './selftest.ts'
@@ -85,7 +87,8 @@ let doc: DocPayload | null = null
 let docRev = 0
 /** A draft that came in mid-playback: loaded once the player is idle (null: it does not validate) */
 let pending: Storyboard | null | undefined
-let picking = false
+/** Where the editor is waiting for a pick: in the browser, or in any app (native helper) */
+let picking: 'web' | 'app' | null = null
 /** A run being recorded in the browser, for a draft storyboard */
 let recording: { typed: boolean; events: RecEvent[] } | null = null
 let rehearsal: AppState['rehearsal'] = null
@@ -102,9 +105,31 @@ function displaysInOrder() {
   return [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)]
 }
 
-/** Regions relative to a screen work now; windows, Accessibility and OCR need the native helper (M5). */
-function resolveLocal(l: Locator): Rect | null | 'unsupported' {
-  if (l.kind !== 'region' || l.relativeTo !== 'screen') return 'unsupported'
+const helperPath = app.isPackaged ? join(process.resourcesPath, 'cuelight-helper') : resolve(app.getAppPath(), '..', 'helper-mac', 'build', 'cuelight-helper')
+/** The macOS helper: app elements, text on screen, windows, clicks outside the browser */
+const helper = process.platform === 'darwin' && existsSync(helperPath) ? new Helper([helperPath, '--owner-pid', String(process.pid)]) : null
+let native: NativeTargets
+let nativeStatus: AppState['native'] = { available: !!helper, trusted: null, screen: null }
+
+async function refreshNativeStatus() {
+  if (!helper) return
+  try {
+    const r = await helper.request<{ trusted: boolean; screen: boolean }>('status')
+    if (r.trusted !== nativeStatus.trusted || r.screen !== nativeStatus.screen) {
+      nativeStatus = { available: true, trusted: r.trusted, screen: r.screen }
+      native.clear()
+      pushState()
+    }
+  } catch {
+    nativeStatus = { available: helper.usable, trusted: null, screen: null }
+    pushState()
+  }
+}
+
+/** Screen regions are worked out here; everything else goes through the helper. */
+function resolveLocal(l: Locator): LocalResult {
+  if (l.kind === 'dom') return 'unsupported'
+  if (l.kind !== 'region' || l.relativeTo !== 'screen') return native.resolve(l)
   const d = displaysInOrder()[l.display ?? 0]
   if (!d) return null
   const b = d.bounds
@@ -282,6 +307,142 @@ function aiTarget(s?: AiSetup): AiTarget {
   return { provider, model: prof.model.trim(), baseUrl: prof.baseUrl.trim(), key }
 }
 
+// ---------------------------------------------------------------- outside the browser
+
+let osClicks = false
+
+/** Clicks outside the browser, only while a click step needs them. Test runs ignore real clicks. */
+function watchOsClicks(on: boolean) {
+  if (!helper || HEADLESS || on === osClicks) return
+  osClicks = on
+  helper.request('clicks', { on }).catch((e) => {
+    osClicks = false
+    log({ type: 'native', phase: 'clicks', error: e instanceof HelperError ? e.code : String(e) })
+  })
+}
+
+function onHelperEvent(e: import('./helper.ts').HelperEvent) {
+  if (e.ev === 'click') {
+    log({ type: 'os-click', x: e.x, y: e.y })
+    player.osClick(e.x, e.y)
+  } else if (e.ev === 'pick') void finishAppPick(e.x, e.y)
+  else if (e.ev === 'pick-cancel') endPick(null)
+  else if (e.ev === 'exit') {
+    // It forgot what it was asked to do; ask again once it is back.
+    const want = osClicks
+    osClicks = false
+    if (want) setTimeout(() => watchOsClicks(player.wantsOsClicks), 3100)
+    if (picking === 'app') endPick(null)
+  }
+}
+
+type Hit = { app: string; pid: number; own: boolean; chain: AxNode[] }
+let hoverTimer: ReturnType<typeof setInterval> | null = null
+
+/** Picking in any app: the light follows the element under the cursor until the click. */
+async function startAppPick(): Promise<{ ok: boolean; reason?: 'denied' | 'unavailable' }> {
+  if (!helper || HEADLESS) return { ok: false, reason: 'unavailable' }
+  try {
+    await helper.request('pick', { on: true })
+  } catch (e) {
+    return { ok: false, reason: e instanceof HelperError && e.code === 'not-trusted' ? 'denied' : 'unavailable' }
+  }
+  picking = 'app'
+  overlay.setCard(null)
+  overlay.setLight(null)
+  overlay.show()
+  let busy = false
+  hoverTimer = setInterval(async () => {
+    if (busy) return
+    busy = true
+    const p = screen.getCursorScreenPoint()
+    const hit = await helper.request<Hit>('ax.hit', { x: p.x, y: p.y }, 500).catch(() => null)
+    busy = false
+    if (picking !== 'app') return
+    const el = hit && !hit.own ? hit.chain[0] : null
+    overlay.setLight(el?.rect ?? null)
+  }, 90)
+  return { ok: true }
+}
+
+function stopHover() {
+  if (hoverTimer) clearInterval(hoverTimer)
+  hoverTimer = null
+  if (picking === 'app' && player.phase === 'idle') {
+    overlay.setLight(null)
+    overlay.hide()
+  }
+}
+
+/** `cancel`: the editor called it off, so whoever runs the picker is told to stop. */
+function endPick(p: PickResult | null, cancel = false) {
+  if (!picking) return
+  if (picking === 'app') stopHover()
+  if (cancel) {
+    if (picking === 'web') bridge.send({ t: 'pick', on: false })
+    else void helper?.request('pick', { on: false }).catch(() => {})
+  }
+  picking = null
+  control?.webContents.send('pick:result', p)
+  // Back to the editor to see what was picked.
+  if (p && control && !HEADLESS) {
+    if (control.isMinimized()) control.restore()
+    app.focus({ steal: true })
+    control.focus()
+  }
+  pushState()
+}
+
+const inflateBy = ([x, y, w, h]: Rect, d: number): Rect => [x - d, y - d, w + 2 * d, h + 2 * d]
+
+/**
+ * What the presenter clicked, as a fallback chain: the Accessibility element, the text on it
+ * (for apps whose tree says little), and the same spot relative to the window.
+ */
+async function finishAppPick(x: number, y: number) {
+  if (picking !== 'app' || !helper) return
+  stopHover()
+  const hit = await helper.request<Hit>('ax.hit', { x, y }, 1500).catch(() => null)
+  if (!hit || hit.own) return endPick(null, true)
+  const el = hit.chain[0]
+  const elRect: Rect = el?.rect && el.rect[2] > 0 && el.rect[3] > 0 && el.rect[2] * el.rect[3] < 600 * 300 ? el.rect : [x - 40, y - 18, 80, 36]
+  const winNode = hit.chain.findLast((n) => n.role === 'AXWindow')
+  const locators: Locator[] = []
+  const tree = await helper.request<{ nodes: AxNode[] }>('ax.tree', { app: hit.app }, 4000).catch(() => null)
+  const ax = axLocatorFor(hit.app, hit.chain, tree?.nodes ?? null)
+  if (ax && (ax.identifier || ax.title || ax.description || ax.path)) locators.push(ax)
+
+  let text = ''
+  if (nativeStatus.screen) {
+    const lines = await helper
+      .request<{ lines: OcrLine[] }>('ocr', { rect: inflateBy(elRect, 6) }, 5000)
+      .then((r) => r.lines)
+      .catch(() => [] as OcrLine[])
+    const dist = (r: Rect) => Math.hypot(r[0] + r[2] / 2 - x, r[1] + r[3] / 2 - y)
+    const line = lines.filter((l) => l.text.trim() && l.confidence > 0.2).sort((a, b) => dist(a.rect) - dist(b.rect))[0]
+    if (line) {
+      text = line.text.trim().slice(0, 48)
+      const [tx, ty] = line.rect
+      const box: Rect = [elRect[0] - tx, elRect[1] - ty, elRect[2], elRect[3]]
+      const same = Math.abs(box[0]) < 3 && Math.abs(box[1]) < 3 && Math.abs(elRect[2] - line.rect[2]) < 6 && Math.abs(elRect[3] - line.rect[3]) < 6
+      locators.push({ kind: 'visual', app: hit.app, text, ...(same ? {} : { box: box.map(Math.round) as Rect }) })
+    }
+  }
+
+  const wins = await helper
+    .request<{ windows: WinInfo[] }>('windows', { app: hit.app })
+    .then((r) => r.windows)
+    .catch(() => [] as WinInfo[])
+  const win = wins.find((w) => x >= w.rect[0] && x <= w.rect[0] + w.rect[2] && y >= w.rect[1] && y <= w.rect[1] + w.rect[3]) ?? frontWindow(wins, hit.app, process.pid)
+  if (win && win === frontWindow(wins, hit.app, process.pid)) {
+    const r = elRect.map((v, k) => Math.round(k < 2 ? v - win.rect[k] : v)) as Rect
+    locators.push({ kind: 'region', relativeTo: 'window', app: hit.app, rect: r, units: 'pt' })
+  }
+  if (!locators.length) return endPick(null)
+  const label = (el && (axTitle(el) || el.description)) || text || el?.role?.replace(/^AX/, '') || hit.app
+  endPick({ locators, label: label.trim().slice(0, 60), role: el?.role ?? null, url: '', title: winNode?.title ?? win?.title ?? '', app: hit.app })
+}
+
 // ---------------------------------------------------------------- control window
 
 let statePending = false
@@ -309,7 +470,8 @@ function state(): AppState {
     selftest: settings.data.selftest,
     selftestRunning,
     capturable: CAPTURABLE,
-    picking,
+    picking: !!picking,
+    native: nativeStatus,
     recording: recording && { typed: recording.typed, count: recording.events.filter((e) => e.k !== 'nav').length, last: lastAction() },
     rehearsal,
     ai: aiInfo(),
@@ -339,6 +501,8 @@ function createControl(hidden = false) {
   control.on('closed', () => {
     control = null
   })
+  // Permissions are switched on in System Settings, so look again whenever the presenter is back.
+  control.on('focus', () => void refreshNativeStatus())
   // The editor holds back the close while it has unsaved changes; ask what to do.
   control.webContents.on('will-prevent-unload', (e) => {
     const zh = lang() === 'zh'
@@ -415,12 +579,32 @@ function ipc() {
     pushState()
     return { ok: true, events }
   })
-  ipcMain.handle('pick', (_e, on: boolean) => {
-    if (on && (player.phase !== 'idle' || !bridge.connected())) return { ok: false }
-    picking = !!on
-    bridge.send({ t: 'pick', on: picking })
+  ipcMain.handle('pick', async (_e, on: boolean, where: 'web' | 'app' = 'web') => {
+    if (!on) {
+      endPick(null, true)
+      return { ok: true }
+    }
+    if (picking || player.phase !== 'idle') return { ok: false }
+    if (where === 'app') {
+      const r = await startAppPick()
+      pushState()
+      return r
+    }
+    if (!bridge.connected()) return { ok: false }
+    picking = 'web'
+    bridge.send({ t: 'pick', on: true })
     pushState()
     return { ok: true }
+  })
+  ipcMain.handle('native:ask', async (_e, what: 'ax' | 'screen') => {
+    if (!helper || HEADLESS || (what !== 'ax' && what !== 'screen')) return
+    // The system shows its own prompt the first time; after that the switch is in System Settings.
+    const r = await helper.request<{ granted: boolean }>('ask', { what }).catch(() => ({ granted: false }))
+    if (!r.granted) {
+      const pane = what === 'ax' ? 'Privacy_Accessibility' : 'Privacy_ScreenCapture'
+      void shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`)
+    }
+    await refreshNativeStatus()
   })
   ipcMain.handle('selftest:run', () => selftest())
   ipcMain.handle('settings:lang', (_e, l: AppState['langSetting']) => {
@@ -499,6 +683,18 @@ app.whenReady().then(async () => {
     return
   }
 
+  native = new NativeTargets({
+    helper,
+    now: () => performance.now(),
+    ownPid: process.pid,
+    screenAt: () => {
+      const b = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds
+      return [b.x, b.y, b.width, b.height]
+    },
+  })
+  helper?.onEvent(onHelperEvent)
+  void refreshNativeStatus()
+
   bridge = new Bridge(
     { browsers: () => settings.data.browsers, save: (browsers) => settings.update({ browsers }) },
     `Cuelight ${app.getVersion()}`,
@@ -524,10 +720,14 @@ app.whenReady().then(async () => {
       connected: () => bridge.connected(),
     },
     local: resolveLocal,
+    activate: (bundle) => {
+      if (!HEADLESS) void helper?.request('activate', { app: bundle }).catch(() => {})
+    },
     lang,
     now: () => performance.now(),
     onEvent: (e) => {
       log(e)
+      if (e.type === 'phase' || e.type === 'step') watchOsClicks(player.wantsOsClicks)
       if (e.type === 'phase') onPhase(e.phase)
       if (e.type === 'rehearsed') {
         rehearsal = { n: e.n, reason: e.reason, secs: e.secs, est: e.est, at: Date.now() }
@@ -546,16 +746,7 @@ app.whenReady().then(async () => {
       return
     }
     if (m.t === 'picked' || m.t === 'pick-end') {
-      if (!picking) return
-      picking = false
-      control?.webContents.send('pick:result', m.t === 'picked' ? m.pick : null)
-      // Back to the editor to see what was picked.
-      if (m.t === 'picked' && control && !HEADLESS) {
-        if (control.isMinimized()) control.restore()
-        app.focus({ steal: true })
-        control.focus()
-      }
-      pushState()
+      if (picking === 'web') endPick(m.t === 'picked' ? m.pick : null)
       return
     }
     player.onWeb(m)
@@ -619,4 +810,5 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   bridge?.stop()
+  helper?.stop()
 })

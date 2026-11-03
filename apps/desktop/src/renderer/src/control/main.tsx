@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
+  Accessibility,
   BookOpen,
+  Check,
   CircleAlert,
   CircleCheck,
   CircleDot,
@@ -12,6 +14,7 @@ import {
   ListChecks,
   Mic,
   RefreshCw,
+  ScanText,
   ShieldCheck,
   Square,
   type LucideIcon,
@@ -90,6 +93,7 @@ function App() {
         <aside className="side">
           <BrowserTile s={s} t={t} />
           <AiTile info={s.ai} t={t} />
+          {s.platform === 'darwin' && <NativeTile s={s} t={t} />}
           <CaptureTile s={s} t={t} />
           <div className="tile">
             <h3>{t.hotkeys}</h3>
@@ -300,6 +304,41 @@ function BrowserTile({ s, t }: { s: AppState; t: Strings }) {
         </ol>
       )}
       {s.bridge.port && <p className="note mono">{fill(t.listening, { port: s.bridge.port })}</p>}
+    </div>
+  )
+}
+
+/** What the system lets Cuelight do outside the browser, with a way to allow the rest. */
+function NativeTile({ s, t }: { s: AppState; t: Strings }) {
+  const n = s.native
+  const row = (what: 'ax' | 'screen', on: boolean | null, Icon: LucideIcon) => (
+    <li>
+      <Icon size={16} aria-hidden />
+      <span>
+        {what === 'ax' ? t.nativeAx : t.nativeScreen}
+        <span className="muted small"> · {on === null ? t.nativeUnknown : on ? t.nativeOn : t.nativeOff}</span>
+        <span className="note">{what === 'ax' ? t.nativeAxSub : t.nativeScreenSub}</span>
+      </span>
+      {on === false && (
+        <button className="secondary small" onClick={() => void api.nativeAsk(what)}>
+          {t.nativeAllow}
+        </button>
+      )}
+      {on && <Check size={16} className="ok" aria-label={t.nativeOn} />}
+    </li>
+  )
+  return (
+    <div className="tile native-tile">
+      <h3>{t.nativeTile}</h3>
+      {n.available ? (
+        <ul className="perms">
+          {row('ax', n.trusted, Accessibility)}
+          {row('screen', n.screen, ScanText)}
+        </ul>
+      ) : (
+        <p className="note">{t.nativeMissing}</p>
+      )}
+      <p className="note">{t.nativeSub}</p>
     </div>
   )
 }

@@ -1,5 +1,5 @@
 /** Types shared by the main process, preloads and renderers. */
-import type { HintKind, HowKind, Lang, Picked, RecEvent, Rect } from '@cuelight/schema'
+import type { HintKind, HowKind, Lang, Locator, Picked, RecEvent, Rect } from '@cuelight/schema'
 import type { AiInfo, AiPing, AiRequest, AiResult, AiSetup } from './ai.ts'
 
 export type CardKind = HowKind | 'preroll' | 'done'
@@ -88,14 +88,27 @@ export type AppState = {
   selftest: SelftestResult | null
   selftestRunning: boolean
   capturable: boolean
-  /** The browser is waiting for the presenter to pick an element */
+  /** The browser, or the native helper, is waiting for the presenter to pick an element */
   picking: boolean
+  /** Targets in desktop apps (macOS): whether the helper is there and what the system allows */
+  native: NativeStatus
   /** Recording a run in the browser: how many actions so far, and the latest one's label */
   recording: { typed: boolean; count: number; last: string | null } | null
   rehearsal: Rehearsal | null
   /** The AI service for writing lines, and which keys are saved (never the keys) */
   ai: AiInfo
 }
+
+export type NativeStatus = {
+  available: boolean
+  /** Accessibility: app elements and clicks outside the browser. null: not known yet */
+  trusted: boolean | null
+  /** Screen Recording: finding text on screen */
+  screen: boolean | null
+}
+
+/** A pick for the editor: from the browser (dom locators) or from any app (ax, visual, region). */
+export type PickResult = Omit<Picked, 'locators'> & { locators: Locator[]; app?: string }
 
 export type ControlApi = {
   getState(): Promise<AppState>
@@ -114,10 +127,13 @@ export type ControlApi = {
   /** Play just this step, then stop */
   rehearse(index: number): Promise<void>
   stop(): Promise<void>
-  pick(on: boolean): Promise<{ ok: boolean }>
+  /** Pick in the browser, or in any app; `reason` says why an app pick could not start */
+  pick(on: boolean, where?: 'web' | 'app'): Promise<{ ok: boolean; reason?: 'denied' | 'unavailable' }>
+  /** Ask for Accessibility or Screen Recording: the system prompt, or its page in System Settings */
+  nativeAsk(what: 'ax' | 'screen'): Promise<void>
   /** Start (or, while on, switch `typed`) or stop recording; stopping returns the run */
   record(on: boolean, typed?: boolean): Promise<{ ok: boolean; events: RecEvent[] }>
-  onPick(cb: (p: Picked | null) => void): () => void
+  onPick(cb: (p: PickResult | null) => void): () => void
   runSelftest(): Promise<SelftestResult>
   setLang(lang: 'auto' | Lang): Promise<void>
   newCode(): Promise<void>

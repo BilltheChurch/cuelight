@@ -1,6 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { Picked } from '@cuelight/schema'
-import type { AppState, ControlApi } from '../shared/types.ts'
+import type { AppState, ControlApi, PickResult } from '../shared/types.ts'
 
 const api: ControlApi = {
   getState: () => ipcRenderer.invoke('app:state'),
@@ -20,10 +19,11 @@ const api: ControlApi = {
   play: (from) => ipcRenderer.invoke('player:play', from),
   rehearse: (i) => ipcRenderer.invoke('player:rehearse', i),
   stop: () => ipcRenderer.invoke('player:stop'),
-  pick: (on) => ipcRenderer.invoke('pick', on),
+  pick: (on, where) => ipcRenderer.invoke('pick', on, where ?? 'web'),
+  nativeAsk: (what) => ipcRenderer.invoke('native:ask', what),
   record: (on, typed) => ipcRenderer.invoke('record', on, !!typed),
   onPick: (cb) => {
-    const h = (_e: unknown, p: Picked | null) => cb(p)
+    const h = (_e: unknown, p: PickResult | null) => cb(p)
     ipcRenderer.on('pick:result', h)
     return () => ipcRenderer.off('pick:result', h)
   },

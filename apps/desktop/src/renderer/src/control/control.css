@@ -1419,6 +1419,40 @@ kbd {
 .ai-tile-model .mono {
   overflow-wrap: anywhere;
 }
+.native-tile {
+  display: grid;
+  gap: 10px;
+}
+.native-tile h3,
+.native-tile p {
+  margin: 0;
+}
+.perms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.perms li {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--soft);
+}
+.perms li > svg:first-child {
+  color: var(--muted);
+}
+.perms .note {
+  display: block;
+  margin: 2px 0 0;
+}
+.perms .ok {
+  color: var(--green);
+}
 @media (max-width: 1180px) {
   .providers {
     grid-template-columns: repeat(2, minmax(0, 1fr));

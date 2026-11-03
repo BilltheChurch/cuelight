@@ -1,9 +1,11 @@
 /**
  * The storyboard editor: the step list on the left (drag to reorder), the selected step on the
- * right, and picking a target by clicking the element in the presenter's own browser.
+ * right, and picking a target by clicking the element in the presenter's own browser or in any
+ * app on screen.
  */
 import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import {
+  AppWindow,
   ArrowDown,
   ArrowUp,
   Braces,
@@ -41,12 +43,11 @@ import {
   type Act,
   type Lang,
   type Pace,
-  type Picked,
   type RecEvent,
   type Step,
   type TextMatch,
 } from '@cuelight/schema'
-import type { AppState } from '../../../shared/types.ts'
+import type { AppState, PickResult } from '../../../shared/types.ts'
 import { AiPanel } from './ai.tsx'
 import {
   ACTS,
@@ -95,6 +96,7 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
   const [saved, setSaved] = useState('')
   const [sel, setSel] = useState(0)
   const [pickFor, setPickFor] = useState<number | null>(null)
+  const [pickWhere, setPickWhere] = useState<'web' | 'app'>('web')
   const [toast, setToast] = useState<string | null>(null)
   /** The AI sheet, open on the whole storyboard or the selected step */
   const [ai, setAi] = useState<'all' | 'step' | null>(null)
@@ -155,17 +157,18 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
 
   useEffect(
     () =>
-      api.onPick((p: Picked | null) => {
+      api.onPick((p: PickResult | null) => {
         const { pickFor: i, t: tt, boardLang: bl } = cur.current
         setPickFor(null)
         if (!p || i === null) return
-        let startSet = false
+        let startSet: 'url' | 'app' | null = null
         edit((d) => {
           const r = applyPick(d, i, p, (label) => fill(strings[bl].tagClick, { label }))
           startSet = r.startSet
           return r.doc
         })
-        setToast(fill(tt.picked, { label: p.label }) + (startSet ? ' · ' + fill(tt.startSet, { url: p.url }) : ''))
+        const extra = startSet === 'url' ? fill(tt.startSet, { url: p.url }) : startSet === 'app' ? fill(tt.startApp, { app: p.app ?? '' }) : ''
+        setToast(fill(tt.picked, { label: p.label }) + (extra ? ' · ' + extra : ''))
       }),
     [],
   )
@@ -231,10 +234,16 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
     edit((d) => moveStep(d, from, to))
     setSel(to)
   }
-  const startPick = async (i: number) => {
-    const r = await api.pick(true)
-    if (r.ok) setPickFor(i)
-    else setToast(t.pickNoBrowser)
+  const startPick = async (i: number, where: 'web' | 'app') => {
+    const r = await api.pick(true, where)
+    if (r.ok) {
+      setPickWhere(where)
+      setPickFor(i)
+    } else if (where === 'web') setToast(t.pickNoBrowser)
+    else if (r.reason === 'denied') {
+      setToast(t.pickAppDenied)
+      void api.nativeAsk('ax')
+    } else setToast(t.pickAppNone)
   }
   const cancelPick = () => {
     setPickFor(null)
@@ -360,8 +369,9 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
             edit={edit}
             canPlay={idle && parsed.ok}
             canPick={idle && s.bridge.browsers.some((b) => b.connected)}
-            picking={pickFor === sel}
-            onPick={() => void startPick(sel)}
+            canPickApp={idle && s.native.available}
+            picking={pickFor === sel ? pickWhere : null}
+            onPick={(where) => void startPick(sel, where)}
             onCancelPick={cancelPick}
             onRehearse={() => void play(sel, true)}
             onAi={() => setAi('step')}
@@ -499,8 +509,9 @@ function StepDetail(p: {
   edit: Edit
   canPlay: boolean
   canPick: boolean
-  picking: boolean
-  onPick: () => void
+  canPickApp: boolean
+  picking: 'web' | 'app' | null
+  onPick: (where: 'web' | 'app') => void
   onCancelPick: () => void
   onRehearse: () => void
   onAi: () => void
@@ -575,6 +586,7 @@ function StepDetail(p: {
         t={t}
         set={(v) => set('target', v, false)}
         canPick={p.canPick}
+        canPickApp={p.canPickApp}
         picking={p.picking}
         onPick={p.onPick}
         onCancelPick={p.onCancelPick}
@@ -623,8 +635,9 @@ function TargetEditor(p: {
   t: Strings
   set: (v: unknown) => void
   canPick: boolean
-  picking: boolean
-  onPick: () => void
+  canPickApp: boolean
+  picking: 'web' | 'app' | null
+  onPick: (where: 'web' | 'app') => void
   onCancelPick: () => void
 }) {
   const { t } = p
@@ -638,16 +651,21 @@ function TargetEditor(p: {
       {p.picking ? (
         <div className="picking" role="status">
           <span className="pulse" aria-hidden />
-          <span>{t.picking}</span>
+          <span>{p.picking === 'app' ? t.pickingApp : t.picking}</span>
           <button className="secondary small" onClick={p.onCancelPick}>
             {t.cancel}
           </button>
         </div>
       ) : (
         <div className="row">
-          <button className="pick-btn" disabled={!p.canPick} onClick={p.onPick}>
+          <button className="pick-btn" disabled={!p.canPick} onClick={() => p.onPick('web')}>
             <Crosshair size={16} /> {t.pick}
           </button>
+          {p.canPickApp && (
+            <button className="pick-btn" onClick={() => p.onPick('app')}>
+              <AppWindow size={16} /> {t.pickApp}
+            </button>
+          )}
           <button className="ghost" onClick={() => p.set([...list, { kind: 'dom' }])}>
             <Plus size={13} /> {t.addLocator}
           </button>

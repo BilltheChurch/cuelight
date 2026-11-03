@@ -65,10 +65,10 @@ describe('editing the JSON', () => {
     const { doc: d, startSet } = applyPick(doc(), 0, pick, (l) => `Click “${l}”`)
     expect(d.steps[0]).toEqual({ act: 'click', say: 'One', tag: 'Click “Go”', target: pick.locators })
     expect(d.start).toEqual({ url: 'https://example.com/app' })
-    expect(startSet).toBe(true)
+    expect(startSet).toBe('url')
     const second = applyPick(d, 1, pick, (l) => l)
     expect(second.doc.steps[1].tag).toBeUndefined()
-    expect(second.startSet).toBe(false)
+    expect(second.startSet).toBe(null)
     expect(parseStoryboard(second.doc).ok).toBe(true)
   })
 

@@ -7,7 +7,7 @@ import type { Step } from './storyboard.ts'
 export type Lang = 'en' | 'zh'
 
 export type HowKind = 'say-then-click' | 'click' | 'read' | 'read-free' | 'wait' | 'manual'
-export type HintKind = 'scroll-down' | 'scroll-up' | 'waiting-page' | 'no-browser' | 'not-found' | 'unsupported'
+export type HintKind = 'scroll-down' | 'scroll-up' | 'waiting-page' | 'no-browser' | 'not-found' | 'unsupported' | 'no-permission'
 
 const STRINGS = {
   en: {
@@ -23,6 +23,7 @@ const STRINGS = {
     'hint.no-browser': 'Waiting for the browser extension…',
     'hint.not-found': 'Target not found. Press {nextKey} to skip',
     'hint.unsupported': 'This target type is not supported yet. Press {nextKey} to skip',
+    'hint.no-permission': 'Allow Cuelight in System Settings, Privacy & Security first. Press {nextKey} to skip',
     'tag.click': 'Click',
     'tag.read': 'Say this',
     'tag.wait': 'Wait',
@@ -48,6 +49,7 @@ const STRINGS = {
     'hint.no-browser': '等浏览器扩展连上…',
     'hint.not-found': '找不到目标，按 {nextKey} 跳过',
     'hint.unsupported': '暂不支持这种定位，按 {nextKey} 跳过',
+    'hint.no-permission': '先在系统设置的隐私与安全性里允许 Cuelight，按 {nextKey} 跳过',
     'tag.click': '点击',
     'tag.read': '读这句',
     'tag.wait': '等待',

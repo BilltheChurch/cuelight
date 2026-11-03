@@ -78,7 +78,7 @@ const AxPathItem = z.object({
   role: z.string().min(1),
   title: TextMatch.optional(),
   identifier: z.string().optional(),
-  index: z.number().int().nonnegative().optional(),
+  index: z.number().int().nonnegative().optional().describe('Position among its parent\'s children with the same role'),
 })
 
 export const AxLocator = z
@@ -88,10 +88,10 @@ export const AxLocator = z
     window: TextMatch.optional().describe('Window title'),
     role: z.string().optional().describe('AXRole, e.g. AXButton'),
     subrole: z.string().optional(),
-    title: TextMatch.optional(),
+    title: TextMatch.optional().describe('AXTitle, or AXValue for elements without a title (static text, say)'),
     identifier: z.string().optional().describe('AXIdentifier'),
     description: TextMatch.optional(),
-    path: z.array(AxPathItem).optional().describe('Ancestor path from the window down'),
+    path: z.array(AxPathItem).optional().describe('Ancestors from the window down, in order; others may sit between them'),
     nth: z.number().int().nonnegative().optional(),
   })
   .describe('macOS Accessibility element (resolved by the native helper)')
