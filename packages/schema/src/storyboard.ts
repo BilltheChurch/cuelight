@@ -176,11 +176,22 @@ export const Pace = z.object({
 })
 export type Pace = z.infer<typeof Pace>
 
+export const Brief = z
+  .object({
+    product: z.string().optional().describe('What is being shown'),
+    audience: z.string().optional().describe('Who will watch'),
+    tone: z.string().optional().describe('How the lines should sound, e.g. "friendly, plain"'),
+    targetSecs: z.number().positive().optional().describe('Target length of the whole run in seconds'),
+  })
+  .describe('Notes for whoever writes the lines, a person or an AI model')
+export type Brief = z.infer<typeof Brief>
+
 export const Storyboard = z.object({
   $schema: z.string().optional(),
   cuelight: z.literal(SCHEMA_VERSION).describe('Storyboard format version'),
   title: z.string().min(1),
   description: z.string().optional(),
+  brief: Brief.optional(),
   language: z.string().optional().describe('BCP 47 tag of the spoken lines, e.g. en, zh-CN'),
   start: z
     .object({

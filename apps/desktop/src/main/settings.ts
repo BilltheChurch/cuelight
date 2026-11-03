@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Lang } from '@cuelight/schema'
+import { AI_CONFIG_DEFAULT, type AiConfig } from '../shared/ai.ts'
 import type { SelftestResult } from '../shared/types.ts'
 import type { PairedBrowser } from './bridge.ts'
 
@@ -10,9 +11,11 @@ export type Settings = {
   browsers: PairedBrowser[]
   recent: string[]
   selftest: SelftestResult | null
+  /** The AI service for writing lines; its keys are kept apart, in the keychain */
+  ai: AiConfig
 }
 
-const DEFAULTS: Settings = { lang: 'auto', browsers: [], recent: [], selftest: null }
+const DEFAULTS: Settings = { lang: 'auto', browsers: [], recent: [], selftest: null, ai: AI_CONFIG_DEFAULT }
 
 export class SettingsFile {
   data: Settings

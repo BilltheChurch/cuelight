@@ -15,7 +15,7 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { arg, launchBrowser, pair, pw, root, sleep, startApp } from './e2e-lib.mjs'
+import { DOM_HELPERS, arg, launchBrowser, pair, pw, root, sleep, startApp } from './e2e-lib.mjs'
 
 const lang = arg('--lang') ?? 'en'
 const shots = arg('--shots')
@@ -59,24 +59,7 @@ try {
   }
   const toggle = page.locator('li', { hasText: 'Write the storyboard' }).locator('.toggle')
 
-  await evalIn(`window.__t = {
-    qa: (s) => [...document.querySelectorAll(s)],
-    text: (s) => [...document.querySelectorAll(s)].map((e) => e.textContent.trim()),
-    click(s, i = 0) {
-      const el = document.querySelectorAll(s)[i]
-      if (!el) throw new Error('nothing matches ' + s + ' #' + i)
-      el.click()
-      return true
-    },
-    type(s, v) {
-      const el = document.querySelector(s)
-      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
-      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v)
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-      return el.value
-    },
-    key: (key, o = {}) => dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...o })),
-  }; true`)
+  await evalIn(DOM_HELPERS)
   await until(`__t.qa('.sl-item').length`, (n) => n === sb.steps.length, 'the step list')
   check(true, `editor lists all ${sb.steps.length} steps`)
   await until(`__t.text('.dot.on').length`, (n) => n > 0, 'the browser to show as connected')

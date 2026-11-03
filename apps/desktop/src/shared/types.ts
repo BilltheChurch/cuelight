@@ -1,5 +1,6 @@
 /** Types shared by the main process, preloads and renderers. */
 import type { HintKind, HowKind, Lang, Picked, RecEvent, Rect } from '@cuelight/schema'
+import type { AiInfo, AiPing, AiRequest, AiResult, AiSetup } from './ai.ts'
 
 export type CardKind = HowKind | 'preroll' | 'done'
 
@@ -92,6 +93,8 @@ export type AppState = {
   /** Recording a run in the browser: how many actions so far, and the latest one's label */
   recording: { typed: boolean; count: number; last: string | null } | null
   rehearsal: Rehearsal | null
+  /** The AI service for writing lines, and which keys are saved (never the keys) */
+  ai: AiInfo
 }
 
 export type ControlApi = {
@@ -120,6 +123,13 @@ export type ControlApi = {
   newCode(): Promise<void>
   forgetBrowser(id: string): Promise<void>
   revealExtension(): Promise<void>
+  aiSetup(s: AiSetup): Promise<void>
+  /** Try a setup, saved or not, with a tiny request */
+  aiTest(s: AiSetup): Promise<AiPing>
+  aiRun(req: AiRequest): Promise<AiResult>
+  aiCancel(): Promise<void>
+  /** Characters of the answer so far, while a request runs */
+  onAiProgress(cb: (chars: number) => void): () => void
 }
 
 export type OverlayApi = {

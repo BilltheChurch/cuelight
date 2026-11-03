@@ -12,7 +12,7 @@ type Obj = Record<string, unknown>
 export const ACTS: Act[] = ['click', 'read', 'wait', 'manual']
 
 /** Where a new key goes among the keys already there; the author's own order is never changed. */
-export const ROOT_ORDER = ['$schema', 'cuelight', 'title', 'description', 'language', 'start', 'pace', 'card', 'steps']
+export const ROOT_ORDER = ['$schema', 'cuelight', 'title', 'description', 'brief', 'language', 'start', 'pace', 'card', 'steps']
 export const STEP_ORDER = ['id', 'act', 'say', 'tag', 'how', 'target', 'until', 'secs', 'optional', 'card', 'note']
 export const LOCATOR_ORDER = ['kind', 'url', 'within', 'testId', 'role', 'name', 'text', 'css', 'nth', 'closest']
 export const UNTIL_ORDER = ['appear', 'gone', 'url', 'timeoutSecs']

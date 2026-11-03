@@ -12,7 +12,8 @@
  *   CUELIGHT_DEV_TOKEN=...  accept this bridge token without pairing (scripts/e2e-web.mjs uses it)
  *   CUELIGHT_USER_DATA=...  keep settings and pairings in this folder instead (throwaway test runs)
  *   CUELIGHT_HEADLESS=1     invisible test runs: no windows, no Dock icon, no global hotkeys, and the
- *                           real cursor is ignored, so whoever is using the machine is not disturbed
+ *                           real cursor is ignored, so whoever is using the machine is not disturbed;
+ *                           AI keys stay in memory, so the keychain is never asked
  *   CUELIGHT_DEV_STDIN=1    scripted checks drive the control window over stdin, one JSON command per
  *                           line: {"cmd":"eval","js":...} or {"cmd":"shot","path":...}; with
  *                           CUELIGHT_HEADLESS the window exists but is never shown (scripts/e2e-editor.mjs)
@@ -20,7 +21,7 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import readline from 'node:readline'
-import { BrowserWindow, app, dialog, globalShortcut, ipcMain, nativeTheme, screen, shell } from 'electron'
+import { BrowserWindow, app, dialog, globalShortcut, ipcMain, nativeTheme, safeStorage, screen, session, shell } from 'electron'
 import {
   formatJson,
   langFromLocale,
@@ -32,7 +33,9 @@ import {
   type RecEvent,
   type Storyboard,
 } from '@cuelight/schema'
+import { AI_PROVIDERS, profileOf, type AiInfo, type AiRequest, type AiSetup } from '../shared/ai.ts'
 import type { AppState, DocPayload, SaveResult, SelftestResult } from '../shared/types.ts'
+import { KeyStore, pingAi, runAi, type AiTarget } from './ai.ts'
 import { Bridge } from './bridge.ts'
 import { OverlayManager } from './overlay.ts'
 import { Player } from './player.ts'
@@ -252,6 +255,33 @@ function onPhase(phase: Player['phase']) {
   pushState()
 }
 
+// ---------------------------------------------------------------- AI
+
+let keys: KeyStore
+let aiRun: AbortController | null = null
+
+const aiInfo = (): AiInfo => ({ ...settings.data.ai, keys: keys.status(), secure: keys.secure })
+
+/**
+ * Fetch for AI requests, in a session of its own so its proxy affects nothing else: the one set
+ * in the app, else HTTPS_PROXY, else the system's. Loopback (Ollama, test servers) goes direct.
+ */
+async function aiFetch(proxy: string) {
+  const ses = session.fromPartition('cuelight-ai')
+  const rule = proxy.trim() || process.env.HTTPS_PROXY || process.env.https_proxy || ''
+  await ses.setProxy(rule ? { proxyRules: rule } : { mode: 'system' })
+  return (input: string, init?: RequestInit) => ses.fetch(input, init)
+}
+
+/** The saved setup, or one being tried in the settings sheet; its key is decrypted only now. */
+function aiTarget(s?: AiSetup): AiTarget {
+  const c = settings.data.ai
+  const provider = s?.provider ?? c.provider
+  const prof = s?.profile ?? profileOf(c, provider)
+  const key = s?.key === null ? null : typeof s?.key === 'string' && s.key.trim() ? s.key.trim() : keys.get(provider)
+  return { provider, model: prof.model.trim(), baseUrl: prof.baseUrl.trim(), key }
+}
+
 // ---------------------------------------------------------------- control window
 
 let statePending = false
@@ -282,6 +312,7 @@ function state(): AppState {
     picking,
     recording: recording && { typed: recording.typed, count: recording.events.filter((e) => e.k !== 'nav').length, last: lastAction() },
     rehearsal,
+    ai: aiInfo(),
   }
 }
 
@@ -301,7 +332,8 @@ function createControl(hidden = false) {
     title: 'Cuelight',
     titleBarStyle: 'hiddenInset',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#111111' : '#f4f3ef',
-    webPreferences: { preload: join(import.meta.dirname, '../preload/control.cjs'), sandbox: true, contextIsolation: true },
+    // A window that is never shown would otherwise be throttled, and its pictures lag the page.
+    webPreferences: { preload: join(import.meta.dirname, '../preload/control.cjs'), sandbox: true, contextIsolation: true, backgroundThrottling: !hidden },
   })
   if (!hidden) control.once('ready-to-show', () => control?.show())
   control.on('closed', () => {
@@ -398,6 +430,44 @@ function ipc() {
   ipcMain.handle('bridge:code', () => bridge.newCode())
   ipcMain.handle('bridge:forget', (_e, id: string) => bridge.forget(id))
   ipcMain.handle('extension:reveal', () => shell.openPath(extensionDir))
+  ipcMain.handle('ai:setup', (_e, s: AiSetup) => {
+    if (!AI_PROVIDERS.includes(s?.provider)) return
+    const c = settings.data.ai
+    const profile = { model: String(s.profile?.model ?? '').trim(), baseUrl: String(s.profile?.baseUrl ?? '').trim() }
+    settings.update({ ai: { provider: s.provider, proxy: String(s.proxy ?? '').trim(), profiles: { ...c.profiles, [s.provider]: profile } } })
+    if (s.key !== undefined) keys.set(s.provider, s.key)
+    log({ type: 'ai', phase: 'setup', provider: s.provider, model: profile.model, key: keys.has(s.provider) })
+    pushState()
+  })
+  ipcMain.handle('ai:test', async (_e, s: AiSetup) => {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 60_000)
+    try {
+      const r = await pingAi(aiTarget(s), { fetch: await aiFetch(s.proxy ?? ''), signal: ctl.signal })
+      log({ type: 'ai', phase: 'test', ...r })
+      return r
+    } finally {
+      clearTimeout(timer)
+    }
+  })
+  ipcMain.handle('ai:run', async (_e, req: AiRequest) => {
+    if (aiRun) return { ok: false, error: 'busy' }
+    const ctl = (aiRun = new AbortController())
+    const t = aiTarget()
+    log({ type: 'ai', phase: 'start', provider: t.provider, model: t.model, scope: req.scope })
+    try {
+      const r = await runAi(req, t, {
+        fetch: await aiFetch(settings.data.ai.proxy),
+        signal: ctl.signal,
+        onProgress: (chars) => control?.webContents.send('ai:progress', chars),
+      })
+      log({ type: 'ai', phase: r.ok ? 'done' : 'error', ...(r.ok ? { model: r.model, steps: r.out.steps.length } : { error: r.error, detail: r.detail }) })
+      return r
+    } finally {
+      aiRun = null
+    }
+  })
+  ipcMain.handle('ai:cancel', () => aiRun?.abort())
 }
 
 // ---------------------------------------------------------------- startup
@@ -405,6 +475,14 @@ function ipc() {
 app.whenReady().then(async () => {
   if (HEADLESS) app.dock?.hide()
   settings = SettingsFile.in(app.getPath('userData'))
+  // Test runs never touch the keychain: their keys live in memory only.
+  keys = HEADLESS
+    ? new KeyStore(null, null)
+    : new KeyStore(join(app.getPath('userData'), 'ai-keys.json'), {
+        available: () => safeStorage.isEncryptionAvailable(),
+        encrypt: (k) => safeStorage.encryptString(k),
+        decrypt: (b) => safeStorage.decryptString(b),
+      })
   overlay = new OverlayManager({
     capturable: CAPTURABLE,
     quiet: process.env.CUELIGHT_CAPTURABLE === 'docs',
@@ -513,6 +591,9 @@ function devStdin() {
       if (!control) throw new Error('no control window')
       if (c.cmd === 'eval') log({ type: 'eval', id: c.id, ok: true, value: await control.webContents.executeJavaScript(String(c.js), true) })
       else if (c.cmd === 'shot') {
+        // Paint what the page shows now, not the last frame painted.
+        control.webContents.invalidate()
+        await new Promise((r) => setTimeout(r, 150))
         writeFileSync(String(c.path), (await control.webContents.capturePage()).toPNG())
         log({ type: 'shot', id: c.id, ok: true, path: c.path })
       }

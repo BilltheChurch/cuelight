@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { draftFromRecording, keyLabels } from '@cuelight/schema'
 import type { AppState, ControlApi, ProbeResult } from '../../../shared/types.ts'
+import { AiSetupSheet, AiTile } from './ai.tsx'
 import { Editor } from './editor.tsx'
 import { fill, strings, type Strings } from './i18n.ts'
 import './control.css'
@@ -35,9 +36,15 @@ const EXAMPLE_ICON: Record<string, LucideIcon> = { todomvc: ListChecks, 'wikiped
 function App() {
   const [s, setS] = useState<AppState | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [aiSetup, setAiSetup] = useState(false)
   useEffect(() => {
     void api.getState().then(setS)
     return api.onState(setS)
+  }, [])
+  useEffect(() => {
+    const open = () => setAiSetup(true)
+    addEventListener('cuelight:ai-setup', open)
+    return () => removeEventListener('cuelight:ai-setup', open)
   }, [])
   useEffect(() => {
     if (!notice) return
@@ -82,6 +89,7 @@ function App() {
         </section>
         <aside className="side">
           <BrowserTile s={s} t={t} />
+          <AiTile info={s.ai} t={t} />
           <CaptureTile s={s} t={t} />
           <div className="tile">
             <h3>{t.hotkeys}</h3>
@@ -110,6 +118,7 @@ function App() {
           </div>
         </aside>
       </main>
+      {aiSetup && <AiSetupSheet info={s.ai} t={t} onClose={() => setAiSetup(false)} />}
       {notice && !s.doc && (
         <div className="toast" role="status">
           {notice}

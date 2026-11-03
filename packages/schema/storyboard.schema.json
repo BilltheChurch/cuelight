@@ -19,6 +19,29 @@
     "description": {
       "type": "string"
     },
+    "brief": {
+      "type": "object",
+      "properties": {
+        "product": {
+          "description": "What is being shown",
+          "type": "string"
+        },
+        "audience": {
+          "description": "Who will watch",
+          "type": "string"
+        },
+        "tone": {
+          "description": "How the lines should sound, e.g. \"friendly, plain\"",
+          "type": "string"
+        },
+        "targetSecs": {
+          "description": "Target length of the whole run in seconds",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "description": "Notes for whoever writes the lines, a person or an AI model"
+    },
     "language": {
       "description": "BCP 47 tag of the spoken lines, e.g. en, zh-CN",
       "type": "string"

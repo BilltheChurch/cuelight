@@ -17,7 +17,8 @@
     "schema": "pnpm --filter @cuelight/schema emit",
     "selftest": "pnpm --filter @cuelight/desktop selftest",
     "e2e": "node scripts/e2e-web.mjs",
-    "e2e:editor": "node scripts/e2e-editor.mjs"
+    "e2e:editor": "node scripts/e2e-editor.mjs",
+    "e2e:ai": "node scripts/e2e-ai.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -32,6 +32,15 @@ const api: ControlApi = {
   newCode: () => ipcRenderer.invoke('bridge:code'),
   forgetBrowser: (id) => ipcRenderer.invoke('bridge:forget', id),
   revealExtension: () => ipcRenderer.invoke('extension:reveal'),
+  aiSetup: (s) => ipcRenderer.invoke('ai:setup', s),
+  aiTest: (s) => ipcRenderer.invoke('ai:test', s),
+  aiRun: (req) => ipcRenderer.invoke('ai:run', req),
+  aiCancel: () => ipcRenderer.invoke('ai:cancel'),
+  onAiProgress: (cb) => {
+    const h = (_e: unknown, chars: number) => cb(chars)
+    ipcRenderer.on('ai:progress', h)
+    return () => ipcRenderer.off('ai:progress', h)
+  },
 }
 
 contextBridge.exposeInMainWorld('cuelight', api)

@@ -23,6 +23,7 @@ import {
   Redo2,
   Save,
   Settings2,
+  Sparkles,
   Trash2,
   Undo2,
   X,
@@ -46,6 +47,7 @@ import {
   type TextMatch,
 } from '@cuelight/schema'
 import type { AppState } from '../../../shared/types.ts'
+import { AiPanel } from './ai.tsx'
 import {
   ACTS,
   LOCATOR_ORDER,
@@ -94,6 +96,8 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
   const [sel, setSel] = useState(0)
   const [pickFor, setPickFor] = useState<number | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  /** The AI sheet, open on the whole storyboard or the selected step */
+  const [ai, setAi] = useState<'all' | 'step' | null>(null)
   const doc = h.present
   const steps = doc.steps
   const idle = s.player.phase === 'idle'
@@ -239,6 +243,8 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A sheet on top (AI, its setup) has the keyboard to itself.
+      if (document.querySelector('.sheet-back')) return
       const mod = e.metaKey || e.ctrlKey
       const k = e.key.toLowerCase()
       if (mod && k === 's') {
@@ -288,9 +294,14 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
           </p>
         </div>
         <div className="ed-actions">
-          <button className="primary big" disabled={!idle || !parsed.ok} onClick={() => void play(0)}>
-            <Play size={18} /> {t.play}
-          </button>
+          <div className="ed-cta">
+            <button className="secondary big" onClick={() => setAi('all')}>
+              <Sparkles size={17} /> {t.aiWrite}
+            </button>
+            <button className="primary big" disabled={!idle || !parsed.ok} onClick={() => void play(0)}>
+              <Play size={18} /> {t.play}
+            </button>
+          </div>
           <div className="toolbar">
             <IconBtn icon={CircleDot} label={t.recordSteps} disabled={!idle || !!s.recording} onClick={() => void api.record(true, false).then((r) => r.ok || setToast(t.pickNoBrowser))} />
             <span className="sep" />
@@ -353,6 +364,7 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
             onPick={() => void startPick(sel)}
             onCancelPick={cancelPick}
             onRehearse={() => void play(sel, true)}
+            onAi={() => setAi('step')}
             onPlayFrom={() => void play(sel)}
             onMove={(d) => move(sel, sel + d)}
             onDuplicate={() => {
@@ -366,6 +378,26 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
           />
         )}
       </div>
+      {ai && (
+        <AiPanel
+          doc={doc}
+          sel={sel}
+          startScope={ai}
+          info={s.ai}
+          uiLang={s.lang}
+          t={t}
+          onApply={(next, n) => {
+            edit(() => next)
+            setAi(null)
+            setToast(fill(t.aiApplied, { n }))
+          }}
+          onBrief={() => {
+            setAi(null)
+            setSel(-1)
+          }}
+          onClose={() => setAi(null)}
+        />
+      )}
       {toast && (
         <div className="toast" role="status">
           {toast}
@@ -471,6 +503,7 @@ function StepDetail(p: {
   onPick: () => void
   onCancelPick: () => void
   onRehearse: () => void
+  onAi: () => void
   onPlayFrom: () => void
   onMove: (d: 1 | -1) => void
   onDuplicate: () => void
@@ -492,6 +525,7 @@ function StepDetail(p: {
           <button className="secondary small" disabled={!p.canPlay} onClick={p.onPlayFrom}>
             {t.playFrom}
           </button>
+          <IconBtn icon={Sparkles} label={t.aiRewriteStep} onClick={p.onAi} />
           <span className="sep" />
           <IconBtn icon={ArrowUp} label={t.moveUp} disabled={i === 0} onClick={() => p.onMove(-1)} />
           <IconBtn icon={ArrowDown} label={t.moveDown} disabled={i === p.n - 1} onClick={() => p.onMove(1)} />
@@ -821,7 +855,8 @@ function BoardSettings({ doc, t, edit }: { doc: Doc; t: Strings; edit: Edit }) {
   const set = (k: string, v: unknown) => edit((d) => setRootKey(d, k, v), 'root.' + k)
   const start = (doc.start && typeof doc.start === 'object' ? doc.start : {}) as Obj
   const pace = (doc.pace && typeof doc.pace === 'object' ? doc.pace : {}) as Obj
-  const sub = (k: 'start' | 'pace', obj: Obj, key: string, v: unknown) => {
+  const brief = (doc.brief && typeof doc.brief === 'object' ? doc.brief : {}) as Obj
+  const sub = (k: 'start' | 'pace' | 'brief', obj: Obj, key: string, v: unknown) => {
     const next = withKey(obj, key, v)
     set(k, Object.keys(next).length ? next : undefined)
   }
@@ -847,6 +882,27 @@ function BoardSettings({ doc, t, edit }: { doc: Doc; t: Strings; edit: Edit }) {
           <input type="number" min={0.5} max={6} step={0.1} value={typeof pace.unitsPerSec === 'number' ? pace.unitsPerSec : ''} placeholder="2" onChange={(e) => sub('pace', pace, 'unitsPerSec', num(e.target.value))} />
         </Field>
       </div>
+      <Group label={t.brief}>
+        <div className="brief">
+          <div className="two">
+            <Field label={t.product}>
+              <input value={textOf(brief.product)} placeholder={t.productPh} onChange={(e) => sub('brief', brief, 'product', e.target.value)} />
+            </Field>
+            <Field label={t.audience}>
+              <input value={textOf(brief.audience)} placeholder={t.audiencePh} onChange={(e) => sub('brief', brief, 'audience', e.target.value)} />
+            </Field>
+          </div>
+          <div className="two">
+            <Field label={t.tone}>
+              <input value={textOf(brief.tone)} placeholder={t.tonePh} onChange={(e) => sub('brief', brief, 'tone', e.target.value)} />
+            </Field>
+            <Field label={t.targetLen}>
+              <input type="number" min={5} step={5} value={typeof brief.targetSecs === 'number' ? brief.targetSecs : ''} placeholder="60" onChange={(e) => sub('brief', brief, 'targetSecs', num(e.target.value))} />
+            </Field>
+          </div>
+          <span className="hint">{t.briefHint}</span>
+        </div>
+      </Group>
       <Group label={t.cardPlace}>
         <Segmented
           value={typeof doc.card === 'string' ? doc.card : 'auto'}

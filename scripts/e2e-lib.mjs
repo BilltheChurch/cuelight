@@ -87,6 +87,7 @@ export function startApp({ args = [], env = {}, headed = false, stdin = false, l
 
   return {
     proc,
+    userData,
     events,
     waitEvent,
     waitNext,
@@ -180,6 +181,26 @@ export async function pair(ctx, extId, code) {
   console.log('paired')
   await popup.close()
 }
+
+/** Small helpers for driving the control window's DOM through evalIn, installed as window.__t. */
+export const DOM_HELPERS = `window.__t = {
+  qa: (s) => [...document.querySelectorAll(s)],
+  text: (s) => [...document.querySelectorAll(s)].map((e) => e.textContent.trim()),
+  click(s, i = 0) {
+    const el = document.querySelectorAll(s)[i]
+    if (!el) throw new Error('nothing matches ' + s + ' #' + i)
+    el.click()
+    return true
+  },
+  type(s, v) {
+    const el = document.querySelector(s)
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    return el.value
+  },
+  key: (key, o = {}) => dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...o })),
+}; true`
 
 export function esc(s) {
   return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
