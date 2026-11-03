@@ -21,7 +21,17 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import readline from 'node:readline'
 import { BrowserWindow, app, dialog, globalShortcut, ipcMain, nativeTheme, screen, shell } from 'electron'
-import { formatJson, langFromLocale, parseStoryboard, setCuePlatform, type Lang, type Locator, type Rect, type Storyboard } from '@cuelight/schema'
+import {
+  formatJson,
+  langFromLocale,
+  parseStoryboard,
+  setCuePlatform,
+  type Lang,
+  type Locator,
+  type Rect,
+  type RecEvent,
+  type Storyboard,
+} from '@cuelight/schema'
 import type { AppState, DocPayload, SaveResult, SelftestResult } from '../shared/types.ts'
 import { Bridge } from './bridge.ts'
 import { OverlayManager } from './overlay.ts'
@@ -73,6 +83,8 @@ let docRev = 0
 /** A draft that came in mid-playback: loaded once the player is idle (null: it does not validate) */
 let pending: Storyboard | null | undefined
 let picking = false
+/** A run being recorded in the browser, for a draft storyboard */
+let recording: { typed: boolean; events: RecEvent[] } | null = null
 let rehearsal: AppState['rehearsal'] = null
 let loadError: AppState['loadError'] = null
 let selftestRunning = false
@@ -268,8 +280,14 @@ function state(): AppState {
     selftestRunning,
     capturable: CAPTURABLE,
     picking,
+    recording: recording && { typed: recording.typed, count: recording.events.filter((e) => e.k !== 'nav').length, last: lastAction() },
     rehearsal,
   }
+}
+
+function lastAction(): string | null {
+  const e = recording?.events.findLast((x) => x.k !== 'nav')
+  return e && 'label' in e ? e.label : null
 }
 
 /** `hidden`: scripted checks only (CUELIGHT_DEV_STDIN with CUELIGHT_HEADLESS); never shown. */
@@ -334,7 +352,9 @@ function ipc() {
   ipcMain.handle('storyboard:path', (_e, p: string) => {
     if (settings.data.recent.includes(p)) openStoryboard(p)
   })
-  ipcMain.handle('storyboard:new', () => setDoc({ path: null, example: false, rev: ++docRev, json: blank() }))
+  ipcMain.handle('storyboard:new', (_e, json?: unknown) =>
+    setDoc({ path: null, example: false, rev: ++docRev, json: json && typeof json === 'object' && !Array.isArray(json) ? json : blank() }),
+  )
   ipcMain.handle('storyboard:close', () => setDoc(null))
   ipcMain.handle('storyboard:doc', () => doc)
   ipcMain.handle('storyboard:draft', (_e, json: unknown) => {
@@ -348,6 +368,21 @@ function ipc() {
     if (typeof i === 'number' && player.phase === 'idle') player.start(i, { single: true })
   })
   ipcMain.handle('player:stop', () => player.stop())
+  ipcMain.handle('record', (_e, on: boolean, typed: boolean) => {
+    if (on) {
+      if (player.phase !== 'idle' || !bridge.connected()) return { ok: false, events: [] }
+      // Starting again while recording only changes whether typed text is kept.
+      recording = { typed: !!typed, events: recording?.events ?? [] }
+      bridge.send({ t: 'record', on: true, typed: !!typed })
+      pushState()
+      return { ok: true, events: [] }
+    }
+    const events = recording?.events ?? []
+    recording = null
+    bridge.send({ t: 'record', on: false, typed: false })
+    pushState()
+    return { ok: true, events }
+  })
   ipcMain.handle('pick', (_e, on: boolean) => {
     if (on && (player.phase !== 'idle' || !bridge.connected())) return { ok: false }
     picking = !!on
@@ -425,6 +460,13 @@ app.whenReady().then(async () => {
   bridge.on('message', (m) => {
     if (LOG && m.t !== 'rect' && m.t !== 'pointer') log({ type: 'web', m })
     if (LOG && m.t === 'rect') log({ type: 'rect', seq: m.seq, rect: m.rect, found: m.found, offscreen: m.offscreen })
+    if (m.t === 'rec') {
+      if (recording) {
+        recording.events.push(m.ev)
+        pushState()
+      }
+      return
+    }
     if (m.t === 'picked' || m.t === 'pick-end') {
       if (!picking) return
       picking = false

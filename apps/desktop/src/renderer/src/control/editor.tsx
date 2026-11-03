@@ -8,6 +8,7 @@ import {
   ArrowUp,
   Braces,
   CircleAlert,
+  CircleDot,
   Clock,
   Copy,
   Crosshair,
@@ -35,10 +36,12 @@ import {
   langFromLocale,
   parseStoryboard,
   readSecs,
+  stepsFromRecording,
   type Act,
   type Lang,
   type Pace,
   type Picked,
+  type RecEvent,
   type Step,
   type TextMatch,
 } from '@cuelight/schema'
@@ -170,6 +173,25 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
     }
   }, [s.picking, pickFor])
 
+  // A run recorded while this storyboard is open lands after the selected step.
+  useEffect(() => {
+    const onRecorded = (e: Event) => {
+      const { sel: i, t: tt, boardLang: bl, doc: d0 } = cur.current
+      const { steps: add, startUrl } = stepsFromRecording((e as CustomEvent<RecEvent[]>).detail, bl)
+      if (!add.length) return setToast(tt.recEmpty)
+      const at = Math.min(i < 0 ? d0.steps.length : i + 1, d0.steps.length)
+      edit((d) => {
+        let out = d
+        add.forEach((st, k) => (out = insertStep(out, at + k, st)))
+        return startUrl && !d.start?.url && /^https?:/.test(startUrl) ? setRootKey(out, 'start', { ...(d.start ?? {}), url: startUrl }) : out
+      })
+      setSel(at)
+      setToast(fill(tt.recAdded, { n: add.length }))
+    }
+    addEventListener('cuelight:recorded', onRecorded)
+    return () => removeEventListener('cuelight:recorded', onRecorded)
+  }, [])
+
   useEffect(() => {
     const r = s.rehearsal
     if (!r || Date.now() - r.at > 5000) return
@@ -270,6 +292,8 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
             <Play size={18} /> {t.play}
           </button>
           <div className="toolbar">
+            <IconBtn icon={CircleDot} label={t.recordSteps} disabled={!idle || !!s.recording} onClick={() => void api.record(true, false).then((r) => r.ok || setToast(t.pickNoBrowser))} />
+            <span className="sep" />
             <IconBtn icon={Undo2} label={`${t.undo} (⌘Z)`} disabled={!h.past.length} onClick={() => dispatch({ type: 'undo' })} />
             <IconBtn icon={Redo2} label={`${t.redo} (⇧⌘Z)`} disabled={!h.future.length} onClick={() => dispatch({ type: 'redo' })} />
             <button className="secondary" onClick={() => void save(false)} title="⌘S">

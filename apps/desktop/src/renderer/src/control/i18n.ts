@@ -151,6 +151,18 @@ const en = {
   paceHint: 'English words per second; a CJK character counts as half. Default 2',
   startUrl: 'Start page',
   startUrlHint: 'Opened when you play from step 1',
+  recordRun: 'Record a run',
+  recordRunSub: 'Click through your demo once in the browser, and get the steps drafted',
+  recordSteps: 'Record steps after this one',
+  recording: 'Recording in your browser',
+  recCount: '{n} actions',
+  recLast: 'latest: {label}',
+  recHint: 'Click and type as in the real demo. The lines are left for you to write.',
+  recTyped: 'Keep the text I type (never passwords)',
+  recStop: 'Stop and draft',
+  recCancel: 'Discard',
+  recEmpty: 'Nothing was recorded',
+  recAdded: 'Added {n} recorded steps',
 }
 
 export type Strings = typeof en
@@ -306,6 +318,18 @@ const zh: Strings = {
   paceHint: '每秒几个英文词，一个汉字按半个算。默认 2',
   startUrl: '开始页面',
   startUrlHint: '从第 1 步开始播放时打开',
+  recordRun: '录一遍',
+  recordRunSub: '在浏览器里正常操作一遍，自动生成分镜步骤',
+  recordSteps: '在这一步后面录几步',
+  recording: '正在浏览器里录制',
+  recCount: '{n} 个动作',
+  recLast: '最新：{label}',
+  recHint: '像正式演示一样点击和输入，台词留给你来写。',
+  recTyped: '记下我输入的文字（不含密码）',
+  recStop: '停止并生成',
+  recCancel: '放弃',
+  recEmpty: '什么也没录到',
+  recAdded: '加了 {n} 个录下的步骤',
 }
 
 export const strings: Record<Lang, Strings> = { en, zh }

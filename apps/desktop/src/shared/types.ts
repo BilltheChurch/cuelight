@@ -1,5 +1,5 @@
 /** Types shared by the main process, preloads and renderers. */
-import type { HintKind, HowKind, Lang, Picked, Rect } from '@cuelight/schema'
+import type { HintKind, HowKind, Lang, Picked, RecEvent, Rect } from '@cuelight/schema'
 
 export type CardKind = HowKind | 'preroll' | 'done'
 
@@ -89,6 +89,8 @@ export type AppState = {
   capturable: boolean
   /** The browser is waiting for the presenter to pick an element */
   picking: boolean
+  /** Recording a run in the browser: how many actions so far, and the latest one's label */
+  recording: { typed: boolean; count: number; last: string | null } | null
   rehearsal: Rehearsal | null
 }
 
@@ -98,7 +100,8 @@ export type ControlApi = {
   openDialog(): Promise<void>
   openExample(id: string): Promise<void>
   openPath(path: string): Promise<void>
-  newDoc(): Promise<void>
+  /** A blank storyboard, or this JSON (a draft from a recording) as a new unsaved one */
+  newDoc(json?: unknown): Promise<void>
   closeDoc(): Promise<void>
   getDoc(): Promise<DocPayload | null>
   /** The editor's current JSON: plays from here on, even before it is saved */
@@ -109,6 +112,8 @@ export type ControlApi = {
   rehearse(index: number): Promise<void>
   stop(): Promise<void>
   pick(on: boolean): Promise<{ ok: boolean }>
+  /** Start (or, while on, switch `typed`) or stop recording; stopping returns the run */
+  record(on: boolean, typed?: boolean): Promise<{ ok: boolean; events: RecEvent[] }>
   onPick(cb: (p: Picked | null) => void): () => void
   runSelftest(): Promise<SelftestResult>
   setLang(lang: 'auto' | Lang): Promise<void>

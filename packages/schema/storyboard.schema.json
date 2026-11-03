@@ -98,7 +98,7 @@
             "type": "string"
           },
           "how": {
-            "description": "Override the automatic \"how to do this\" hint",
+            "description": "Override the automatic \"how to do this\" hint. {nextKey} shows the next-step hotkey",
             "type": "string"
           },
           "target": {

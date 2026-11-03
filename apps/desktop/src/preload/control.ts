@@ -12,7 +12,7 @@ const api: ControlApi = {
   openDialog: () => ipcRenderer.invoke('storyboard:dialog'),
   openExample: (id) => ipcRenderer.invoke('storyboard:example', id),
   openPath: (p) => ipcRenderer.invoke('storyboard:path', p),
-  newDoc: () => ipcRenderer.invoke('storyboard:new'),
+  newDoc: (json) => ipcRenderer.invoke('storyboard:new', json),
   closeDoc: () => ipcRenderer.invoke('storyboard:close'),
   getDoc: () => ipcRenderer.invoke('storyboard:doc'),
   setDraft: (json) => ipcRenderer.invoke('storyboard:draft', json),
@@ -21,6 +21,7 @@ const api: ControlApi = {
   rehearse: (i) => ipcRenderer.invoke('player:rehearse', i),
   stop: () => ipcRenderer.invoke('player:stop'),
   pick: (on) => ipcRenderer.invoke('pick', on),
+  record: (on, typed) => ipcRenderer.invoke('record', on, !!typed),
   onPick: (cb) => {
     const h = (_e: unknown, p: Picked | null) => cb(p)
     ipcRenderer.on('pick:result', h)

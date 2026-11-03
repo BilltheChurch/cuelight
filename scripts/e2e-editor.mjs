@@ -2,7 +2,9 @@
 // control window hidden and driven over stdin, and a headless browser with the extension supplies
 // the picks. On a copy of the TodoMVC storyboard it cancels a pick with Esc, picks a new target for
 // one step by clicking in the page (the page must not see that click), edits a line, undoes and
-// redoes, reorders by drag and drop, saves, rehearses the step it picked for, and starts a new one.
+// redoes, reorders by drag and drop, saves, and rehearses the step it picked for. Then it records a
+// run in the page into a draft, rehearses a recorded step, records one more step into the open
+// draft, and starts a new storyboard.
 //
 //   pnpm --filter @cuelight/desktop build && pnpm --filter @cuelight/extension build
 //   node scripts/e2e-editor.mjs [--lang en|zh] [--shots <dir>]
@@ -183,15 +185,62 @@ try {
   await until(`document.querySelector('.detail-head h2')?.textContent`, (v) => !/5/.test(v), 'storyboard settings')
   await shot('3-settings')
 
+  // ---------------------------------------------------------------- record a run, get a draft
+  await evalIn(`__t.click('.toolbar > button:last-of-type')`)
+  await until(`__t.qa('.choice').length`, (n) => n >= 3, 'the picker screen')
+  await evalIn(`__t.click('.choice', 1)`)
+  await until(`!!document.querySelector('.recording')`, Boolean, 'the recording bar')
+  await page.waitForTimeout(400)
+  await page.locator('.new-todo').click()
+  await page.keyboard.type('Record me', { delay: 20 })
+  await page.keyboard.press('Enter')
+  await page.locator('li', { hasText: 'Record me' }).locator('.toggle').click()
+  await page.getByRole('link', { name: 'Completed' }).click()
+  await page.getByRole('link', { name: 'All' }).click()
+  const bar = await until(`document.querySelector('.recording')?.textContent ?? ''`, (v) => /: All/.test(v), 'the last recorded action')
+  console.log('bar:', bar)
+  await evalIn(`__t.click('.recording .primary')`)
+  const tags = await until(`__t.text('.sl-item .text strong')`, (v) => Array.isArray(v) && v.length === 4, 'the draft in the editor')
+  console.log('draft steps:', tags)
+  check(/What needs to be done/.test(tags[0]) && /Toggle Todo|勾选|Toggle/.test(tags[1]) && /Completed/.test(tags[2]) && /All/.test(tags[3]), 'the draft has one step per action: type, tick, Completed, All')
+  check(await evalIn(`!document.querySelector('.ed-head .primary').disabled`), 'the draft is ready to play as is')
+  check((await evalIn(`document.querySelector('.ed-title .path').textContent`)) !== '', 'the draft is a new unsaved storyboard')
+  await shot('4-draft')
+  // The recorded locators work: rehearse the recorded tick.
+  await evalIn(`__t.click('.sl-item', 1)`)
+  const recStarted = waitNext((e) => e.type === 'step' && e.n === 2, 10_000, 'rehearsing the recorded tick')
+  await evalIn(`__t.click('.detail-head .secondary', 0)`)
+  const recEntered = await recStarted
+  await waitEvent((e) => e.type === 'rect' && e.seq === recEntered.seq && e.found, 10_000, 'the spotlight on the recorded checkbox')
+  const recEnded = waitNext((e) => e.type === 'rehearsed', 10_000, 'the recorded step to end')
+  await page.locator('li', { hasText: 'Record me' }).locator('.toggle').click()
+  check((await recEnded).reason === 'click', 'a recorded click step plays back')
+  await waitNext((e) => e.type === 'phase' && e.phase === 'idle', 5000, 'idle').catch(() => {})
+
+  // Record more steps into an open storyboard: they land after the selected step.
+  await evalIn(`__t.click('.sl-item', 3)`)
+  // The window hears that the rehearsal ended a moment after the app does.
+  await until(`!document.querySelector('.toolbar .icon-btn').disabled`, Boolean, 'the record button')
+  await evalIn(`__t.click('.toolbar .icon-btn', 0)`)
+  await until(`!!document.querySelector('.recording')`, Boolean, 'recording into the open storyboard')
+  await page.waitForTimeout(400)
+  await page.getByRole('link', { name: 'Active' }).click()
+  await until(`document.querySelector('.recording')?.textContent ?? ''`, (v) => /1/.test(v), 'one more action')
+  await evalIn(`__t.click('.recording .primary')`)
+  const more = await until(`__t.text('.sl-item .text strong')`, (v) => Array.isArray(v) && v.length === 5, 'the added step')
+  check(/Active/.test(more[4]), 'recording into an open storyboard adds the step after the selected one')
+
   // ---------------------------------------------------------------- close, then a new storyboard
-  await evalIn(`__t.click('.toolbar .icon-btn', 2)`)
-  await until(`__t.qa('.choice').length`, (n) => n >= 2, 'the picker screen')
+  await evalIn(`window.confirm = () => true; __t.click('.toolbar > button:last-of-type')`)
+  await until(`__t.qa('.choice').length`, (n) => n >= 3, 'the picker screen')
   await evalIn(`__t.click('.choice', 0)`)
   const fresh = await until(`__t.qa('.sl-item').length`, (n) => n === 1, 'a new one-step storyboard')
   check(fresh === 1, 'New storyboard opens with one step')
-  await shot('4-new')
+  await shot('5-new')
 } catch (e) {
   failures.push(String(e.message ?? e))
+  const ui = await evalIn(`({ toast: document.querySelector('.toast')?.textContent ?? null, tools: __t.qa('.toolbar button').map((b) => [b.getAttribute('aria-label') ?? b.textContent, b.disabled]) })`).catch(() => null)
+  console.error('editor state at failure:', JSON.stringify(ui))
 } finally {
   await browser?.close()
   await app.close()

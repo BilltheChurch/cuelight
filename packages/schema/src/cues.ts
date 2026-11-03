@@ -94,8 +94,9 @@ export function howKind(step: Pick<Step, 'act' | 'say' | 'target'>): HowKind {
   }
 }
 
+/** An author's own hint may name the hotkeys as {nextKey}, {prevKey} and {hideKey}. */
 export function howTo(step: Pick<Step, 'act' | 'say' | 'target' | 'how'>, lang: Lang): string {
-  return step.how ?? cue(lang, `how.${howKind(step)}`)
+  return step.how !== undefined ? step.how.replace(/\{(nextKey|prevKey|hideKey)\}/g, (_, k: keyof typeof platformKeys) => platformKeys[k]) : cue(lang, `how.${howKind(step)}`)
 }
 
 export function defaultTag(step: Pick<Step, 'act' | 'tag'>, lang: Lang): string {

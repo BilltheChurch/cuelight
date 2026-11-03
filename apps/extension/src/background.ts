@@ -19,6 +19,8 @@ let stageTab: number | null = null
 let pendingCode: string | null = null
 /** The editor asked for an element: the stage tab runs the picker until a pick or Esc */
 let picking = false
+/** The editor is recording a run: the stage tab reports clicks and typing, we report navigation */
+let recording: { typed: boolean } | null = null
 let retry: ReturnType<typeof setTimeout> | null = null
 let ping: ReturnType<typeof setInterval> | null = null
 let backoff = 1000
@@ -163,6 +165,11 @@ function onApp(m: AppMessage) {
       picking = m.on
       void pushPick()
       return
+    case 'record':
+      recording = m.on ? { typed: m.typed } : null
+      if (m.on) void startRecording()
+      else void pushRecord()
+      return
     case 'status':
       show = { playing: m.playing, n: m.n, total: m.total, title: m.title, loaded: m.loaded }
       setStatus(status)
@@ -194,10 +201,31 @@ async function refreshStage(force = false) {
   if (old !== null && old !== id) {
     void tell(old, { t: 'target', target: null, zoom: 1, corr: null })
     if (picking) void tell(old, { t: 'pick', on: false })
+    if (recording) {
+      void tell(old, { t: 'record', on: false, typed: false })
+      // Switching tabs mid-run is part of the run.
+      if (tab?.url) recNav(tab.url, tab.title ?? '')
+    }
   }
   if (target) send({ t: 'rect', seq: target.seq, rect: null, found: false, offscreen: null, url: tab?.url ?? '' })
   await pushTarget()
   if (picking) await pushPick()
+  if (recording) await pushRecord()
+}
+
+const recNav = (url: string, title: string) => send({ t: 'rec', ev: { k: 'nav', at: Date.now(), url, title } })
+
+async function startRecording() {
+  if (stageTab === null) await refreshStage()
+  const tab = stageTab === null ? null : await chrome.tabs.get(stageTab).catch(() => null)
+  if (tab?.url) recNav(tab.url, tab.title ?? '')
+  await pushRecord()
+}
+
+async function pushRecord() {
+  if (stageTab === null) return
+  const ok = await tell(stageTab, { t: 'record', on: !!recording, typed: !!recording?.typed })
+  if (!ok && recording) await chrome.scripting.executeScript({ target: { tabId: stageTab }, files: ['content.js'] }).catch(() => {})
 }
 
 async function pushPick() {
@@ -241,10 +269,12 @@ chrome.tabs.onRemoved.addListener((id) => {
     void refreshStage()
   }
 })
-chrome.tabs.onUpdated.addListener((id, info) => {
+chrome.tabs.onUpdated.addListener((id, info, tab) => {
   if (id === stageTab && info.status === 'loading' && target) {
     send({ t: 'rect', seq: target.seq, rect: null, found: false, offscreen: null, url: info.url ?? '' })
   }
+  // Same-document navigations (hash, pushState) report a URL too.
+  if (id === stageTab && recording && info.url) recNav(info.url, tab.title ?? '')
 })
 // Every tab, not just the stage: a page calibrates from mouse moves before it is ever on stage.
 chrome.tabs.onZoomChange.addListener((z) => {
@@ -272,6 +302,7 @@ chrome.runtime.onMessage.addListener((m: FromContent | FromPopup, sender, reply)
       if (id === stageTab) {
         void pushTarget()
         if (picking) void pushPick()
+        if (recording) void pushRecord()
       } else {
         void zoomOf(id).then((zoom) => tell(id, { t: 'zoom', zoom }))
         if (stageTab === null) void refreshStage()
@@ -288,6 +319,10 @@ chrome.runtime.onMessage.addListener((m: FromContent | FromPopup, sender, reply)
       if (!picking) return
       picking = false
       return send(msg)
+    }
+    if (msg.t === 'rec') {
+      if (recording) send(msg)
+      return
     }
     if (sender.tab.id === stageTab) send(msg)
     return
@@ -322,7 +357,7 @@ chrome.runtime.onMessage.addListener((m: FromContent | FromPopup, sender, reply)
 })
 
 // For debugging from the service worker console: __cuelight()
-;(globalThis as { __cuelight?: () => object }).__cuelight = () => ({ status, port, error, stageTab, target, picking, pendingCode: !!pendingCode, ws: ws?.readyState ?? null })
+;(globalThis as { __cuelight?: () => object }).__cuelight = () => ({ status, port, error, stageTab, target, picking, recording, pendingCode: !!pendingCode, ws: ws?.readyState ?? null })
 
 chrome.alarms.create('cuelight-reconnect', { periodInMinutes: 0.5 })
 chrome.alarms.onAlarm.addListener(() => void connect())

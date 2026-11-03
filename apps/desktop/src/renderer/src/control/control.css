@@ -1078,3 +1078,41 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---------------------------------------------------------------- recording a run */
+
+.recording {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-color: var(--red);
+}
+.rec-body {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rec-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--red);
+  flex: none;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.recording .toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--gold);
+  margin: 0;
+}
+.choice-icon.rec {
+  background: var(--red-soft);
+  color: var(--red);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot {
+    animation: none;
+  }
+}

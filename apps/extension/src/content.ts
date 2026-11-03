@@ -8,6 +8,7 @@ import { inflate, contains, spotlightRect, urlMatches, type Rect, type Viewport,
 import { isVisible, pageEnv, resolveTarget } from './locate.ts'
 import type { Correction, ToContent, FromContent } from './messages.ts'
 import { Picker } from './picker.ts'
+import { Recorder } from './recorder.ts'
 import { describe, suggestLocators } from './suggest.ts'
 
 /** Same padding the overlay puts around the spotlight, in screen points */
@@ -122,6 +123,7 @@ function stop() {
   if (raf) cancelAnimationFrame(raf)
   raf = 0
   picker.stop()
+  recorder.stop()
 }
 
 // ---------------------------------------------------------------- picking a target for the editor
@@ -133,6 +135,10 @@ const picker = new Picker(
   },
   () => send({ t: 'pick-end' }),
 )
+
+// ---------------------------------------------------------------- recording a run for a draft
+
+const recorder = new Recorder((ev) => send({ t: 'rec', ev }))
 
 // ---------------------------------------------------------------- presenter input
 
@@ -218,6 +224,10 @@ chrome.runtime.onMessage.addListener((m: ToContent, _sender, reply) => {
   if (m.t === 'pick') {
     if (m.on) picker.start()
     else picker.stop()
+  }
+  if (m.t === 'record') {
+    if (m.on) recorder.start(m.typed)
+    else recorder.stop()
   }
   if (m.t === 'probe') reply({ ok: true })
   if (m.t === 'debug') reply({ calib, corr, zoom, screenX, screenY, outerHeight, innerHeight, innerWidth, outerWidth, dpr: devicePixelRatio, rect: lastRect })

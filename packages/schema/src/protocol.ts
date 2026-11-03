@@ -8,6 +8,7 @@
  * Coordinates are global screen points (DIP), origin at the top-left of the primary display,
  * the same space as Electron's `screen` module and Chrome's `window.screenX`.
  */
+import type { RecEvent } from './record.ts'
 import type { Act, DomLocator, Rect, Until } from './storyboard.ts'
 
 export const PROTOCOL_VERSION = 1
@@ -44,6 +45,8 @@ export type AppMessage =
   | { t: 'navigate'; url: string }
   /** Editor: start or stop the element picker in the stage tab */
   | { t: 'pick'; on: boolean }
+  /** Editor: record what the presenter does in the browser. `typed`: keep the text typed into fields */
+  | { t: 'record'; on: boolean; typed: boolean }
   | { t: 'status'; playing: boolean; n: number; total: number; title: string; loaded: boolean }
   | { t: 'pong' }
 
@@ -67,4 +70,5 @@ export type ExtMessage =
   | { t: 'picked'; pick: Picked }
   /** The picker closed without a pick (Esc, or the tab went away) */
   | { t: 'pick-end' }
+  | { t: 'rec'; ev: RecEvent }
   | { t: 'ping' }

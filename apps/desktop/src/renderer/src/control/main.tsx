@@ -4,6 +4,7 @@ import {
   BookOpen,
   CircleAlert,
   CircleCheck,
+  CircleDot,
   CircleHelp,
   FileJson,
   FilePlus,
@@ -15,7 +16,7 @@ import {
   Square,
   type LucideIcon,
 } from 'lucide-react'
-import { keyLabels } from '@cuelight/schema'
+import { draftFromRecording, keyLabels } from '@cuelight/schema'
 import type { AppState, ControlApi, ProbeResult } from '../../../shared/types.ts'
 import { Editor } from './editor.tsx'
 import { fill, strings, type Strings } from './i18n.ts'
@@ -33,10 +34,16 @@ const EXAMPLE_ICON: Record<string, LucideIcon> = { todomvc: ListChecks, 'wikiped
 
 function App() {
   const [s, setS] = useState<AppState | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   useEffect(() => {
     void api.getState().then(setS)
     return api.onState(setS)
   }, [])
+  useEffect(() => {
+    if (!notice) return
+    const id = setTimeout(() => setNotice(null), 4200)
+    return () => clearTimeout(id)
+  }, [notice])
   if (!s) return null
   const t = strings[s.lang]
   const keys = keyLabels(s.platform)
@@ -54,7 +61,8 @@ function App() {
       <main className="grid">
         <section className="main">
           {s.player.phase !== 'idle' && <NowPlaying s={s} t={t} keys={keys} />}
-          {s.doc ? <Editor s={s} t={t} /> : <Picker s={s} t={t} />}
+          {s.recording && <RecordingBar s={s} t={t} onNotice={setNotice} />}
+          {s.doc ? <Editor s={s} t={t} /> : <Picker s={s} t={t} onNotice={setNotice} />}
           {s.loadError && (
             <div className="tile error">
               <div className="row-title">
@@ -102,11 +110,62 @@ function App() {
           </div>
         </aside>
       </main>
+      {notice && !s.doc && (
+        <div className="toast" role="status">
+          {notice}
+        </div>
+      )}
     </div>
   )
 }
 
-function Picker({ s, t }: { s: AppState; t: Strings }) {
+/** Start recording a run in the browser; false when there is no browser to record in. */
+async function startRecording() {
+  return (await api.record(true, false)).ok
+}
+
+function RecordingBar({ s, t, onNotice }: { s: AppState; t: Strings; onNotice: (m: string) => void }) {
+  const r = s.recording!
+  const stop = async (discard: boolean) => {
+    const { events } = await api.record(false)
+    if (discard) return
+    // With a storyboard open, the editor adds the steps after the selected one.
+    if (s.doc) return void dispatchEvent(new CustomEvent('cuelight:recorded', { detail: events }))
+    const draft = draftFromRecording(events, { lang: s.lang, language: s.lang === 'zh' ? 'zh-CN' : 'en' })
+    if (draft) await api.newDoc(draft)
+    else onNotice(t.recEmpty)
+  }
+  return (
+    <div className="tile recording" role="status">
+      <span className="rec-dot" aria-hidden />
+      <div className="rec-body">
+        <div>
+          <strong>{t.recording}</strong>
+          <span className="muted">
+            {' · '}
+            {fill(t.recCount, { n: r.count })}
+            {r.last ? ' · ' + fill(t.recLast, { label: r.last }) : ''}
+          </span>
+        </div>
+        <p className="muted small">{t.recHint}</p>
+        <label className="toggle">
+          <input type="checkbox" checked={r.typed} onChange={(e) => void api.record(true, e.target.checked)} />
+          <span>{t.recTyped}</span>
+        </label>
+      </div>
+      <div className="row">
+        <button className="ghost" onClick={() => void stop(true)}>
+          {t.recCancel}
+        </button>
+        <button className="primary" onClick={() => void stop(false)}>
+          <Square size={14} /> {t.recStop}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function Picker({ s, t, onNotice }: { s: AppState; t: Strings; onNotice: (m: string) => void }) {
   return (
     <>
       <div className="heading">
@@ -120,6 +179,13 @@ function Picker({ s, t }: { s: AppState; t: Strings }) {
           </span>
           <strong>{t.newBoard}</strong>
           <span className="muted">{t.newBoardSub}</span>
+        </button>
+        <button className="choice" disabled={!!s.recording} onClick={() => void startRecording().then((ok) => ok || onNotice(t.pickNoBrowser))}>
+          <span className="choice-icon rec">
+            <CircleDot size={22} />
+          </span>
+          <strong>{t.recordRun}</strong>
+          <span className="muted">{t.recordRunSub}</span>
         </button>
         <button className="choice" onClick={() => void api.openDialog()}>
           <span className="choice-icon">

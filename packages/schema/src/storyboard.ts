@@ -153,7 +153,7 @@ export const Step = z
     ),
     say: z.string().default('').describe('The line to say. Empty = do it silently'),
     tag: z.string().optional().describe('Short action label above the line, e.g. "Click Sign in"'),
-    how: z.string().optional().describe('Override the automatic "how to do this" hint'),
+    how: z.string().optional().describe('Override the automatic "how to do this" hint. {nextKey} shows the next-step hotkey'),
     target: Target.optional(),
     until: Until.optional(),
     optional: z.boolean().optional().describe('Skip this step if its target does not show up within 3 s'),
