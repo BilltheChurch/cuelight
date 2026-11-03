@@ -13,22 +13,16 @@
  *   CUELIGHT_USER_DATA=...  keep settings and pairings in this folder instead (throwaway test runs)
  *   CUELIGHT_HEADLESS=1     invisible test runs: no windows, no Dock icon, no global hotkeys, and the
  *                           real cursor is ignored, so whoever is using the machine is not disturbed
+ *   CUELIGHT_DEV_STDIN=1    scripted checks drive the control window over stdin, one JSON command per
+ *                           line: {"cmd":"eval","js":...} or {"cmd":"shot","path":...}; with
+ *                           CUELIGHT_HEADLESS the window exists but is never shown (scripts/e2e-editor.mjs)
  */
-import { readFileSync, readdirSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, resolve, sep } from 'node:path'
+import readline from 'node:readline'
 import { BrowserWindow, app, dialog, globalShortcut, ipcMain, nativeTheme, screen, shell } from 'electron'
-import {
-  estimateSecs,
-  langFromLocale,
-  parseStoryboard,
-  setCuePlatform,
-  defaultTag,
-  type Lang,
-  type Locator,
-  type Rect,
-  type Storyboard,
-} from '@cuelight/schema'
-import type { AppState, LoadedStoryboard, SelftestResult } from '../shared/types.ts'
+import { formatJson, langFromLocale, parseStoryboard, setCuePlatform, type Lang, type Locator, type Rect, type Storyboard } from '@cuelight/schema'
+import type { AppState, DocPayload, SaveResult, SelftestResult } from '../shared/types.ts'
 import { Bridge } from './bridge.ts'
 import { OverlayManager } from './overlay.ts'
 import { Player } from './player.ts'
@@ -46,6 +40,7 @@ const LOG = flag('--log')
 const CAPTURABLE = !app.isPackaged && (process.env.CUELIGHT_CAPTURABLE === '1' || process.env.CUELIGHT_CAPTURABLE === 'docs')
 const DEV_TOKEN = !app.isPackaged ? process.env.CUELIGHT_DEV_TOKEN : undefined
 const HEADLESS = !app.isPackaged && process.env.CUELIGHT_HEADLESS === '1'
+const DEV_STDIN = !app.isPackaged && process.env.CUELIGHT_DEV_STDIN === '1'
 /** Headless runs feed the player a cursor that never moves, so only page pointer events count. */
 const NO_CURSOR = { x: -1e6, y: -1e6 }
 
@@ -73,7 +68,12 @@ let bridge: Bridge
 let overlay: OverlayManager
 let player: Player
 let control: BrowserWindow | null = null
-let loaded: LoadedStoryboard | null = null
+let doc: DocPayload | null = null
+let docRev = 0
+/** A draft that came in mid-playback: loaded once the player is idle (null: it does not validate) */
+let pending: Storyboard | null | undefined
+let picking = false
+let rehearsal: AppState['rehearsal'] = null
 let loadError: AppState['loadError'] = null
 let selftestRunning = false
 let ticker: ReturnType<typeof setInterval> | null = null
@@ -99,23 +99,7 @@ function resolveLocal(l: Locator): Rect | null | 'unsupported' {
 
 // ---------------------------------------------------------------- storyboards
 
-function summarize(path: string, sb: Storyboard): LoadedStoryboard {
-  return {
-    path,
-    title: sb.title,
-    description: sb.description ?? null,
-    language: sb.language ?? null,
-    estSecs: Math.round(estimateSecs(sb)),
-    steps: sb.steps.map((s, i) => ({
-      n: i + 1,
-      act: s.act,
-      tag: defaultTag(s, lang()),
-      say: s.say,
-      hasTarget: !!s.target,
-      kinds: [...new Set((s.target ?? []).map((l) => l.kind))],
-    })),
-  }
-}
+const SCHEMA_URL = 'https://raw.githubusercontent.com/BilltheChurch/cuelight/main/packages/schema/storyboard.schema.json'
 
 function readStoryboard(path: string): { ok: true; sb: Storyboard } | { ok: false; issues: string[] } {
   let json: unknown
@@ -128,19 +112,85 @@ function readStoryboard(path: string): { ok: true; sb: Storyboard } | { ok: fals
   return r.ok ? { ok: true, sb: r.value } : { ok: false, issues: r.issues }
 }
 
+const isExample = (path: string) => resolve(path).startsWith(examplesDir + sep)
+const remember = (path: string) => settings.update({ recent: [path, ...settings.data.recent.filter((p) => p !== path)].slice(0, 8) })
+
+/**
+ * Opens a file in the editor. Only unreadable JSON is refused: a storyboard that does not
+ * validate still opens, so its problems can be fixed there.
+ */
 function openStoryboard(path: string): boolean {
-  const r = readStoryboard(path)
-  if (!r.ok) {
-    loadError = { path, issues: r.issues }
+  let json: unknown
+  try {
+    json = JSON.parse(readFileSync(path, 'utf8'))
+    if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('not a JSON object')
+  } catch (e) {
+    loadError = { path, issues: [String((e as Error).message)] }
     pushState()
     return false
   }
-  player.load(r.sb)
-  loaded = summarize(path, r.sb)
+  setDoc({ path, example: isExample(path), rev: ++docRev, json })
+  if (!doc!.example) remember(path)
+  return parseStoryboard(json).ok
+}
+
+function setDoc(d: DocPayload | null) {
+  doc = d
   loadError = null
-  if (!path.startsWith(examplesDir)) settings.update({ recent: [path, ...settings.data.recent.filter((p) => p !== path)].slice(0, 8) })
+  rehearsal = null
+  if (d) applyDraft(d.json)
+  else {
+    pending = undefined
+    player.unload()
+  }
   pushState()
-  return true
+}
+
+/** The player always plays what the editor shows, saved or not. */
+function applyDraft(json: unknown) {
+  const r = parseStoryboard(json)
+  const sb = r.ok ? r.value : null
+  if (player.phase !== 'idle') pending = sb
+  else if (sb) player.load(sb)
+  else player.unload()
+}
+
+function blank(): unknown {
+  const zh = lang() === 'zh'
+  return {
+    $schema: SCHEMA_URL,
+    cuelight: 1,
+    title: zh ? '未命名分镜' : 'Untitled storyboard',
+    language: zh ? 'zh-CN' : 'en',
+    steps: [{ act: 'manual', say: zh ? '大家好，这是第一句。' : 'Hi! This is the first line.' }],
+  }
+}
+
+async function save(json: unknown, saveAs: boolean): Promise<SaveResult> {
+  if (!doc || !json || typeof json !== 'object') return { ok: false }
+  let path = doc.path
+  if (saveAs || !path || doc.example) {
+    const title = (json as { title?: unknown }).title
+    const name = (typeof title === 'string' && title.trim() ? title.trim() : 'storyboard').replace(/[/\\:*?"<>|]+/g, '-').slice(0, 80) + '.json'
+    const opts = {
+      defaultPath: join(path && !doc.example ? dirname(path) : app.getPath('documents'), name),
+      filters: [{ name: 'Cuelight storyboard', extensions: ['json'] }],
+    }
+    const r = control ? await dialog.showSaveDialog(control, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true }
+    path = r.filePath
+  }
+  // A bundled example points at the schema by a path inside this repo; a copy elsewhere needs the URL.
+  const out = doc.example && typeof (json as { $schema?: unknown }).$schema === 'string' ? { ...json, $schema: SCHEMA_URL } : json
+  try {
+    writeFileSync(path, formatJson(out))
+  } catch (e) {
+    return { ok: false, error: String((e as Error).message) }
+  }
+  doc = { ...doc, path, example: false, json: out }
+  remember(path)
+  pushState()
+  return { ok: true, path }
 }
 
 function examples(): AppState['examples'] {
@@ -182,6 +232,11 @@ function onPhase(phase: Player['phase']) {
     ticker = null
     for (const [acc] of HOTKEYS) globalShortcut.unregister(acc)
   }
+  if (!playing && pending !== undefined) {
+    if (pending) player.load(pending)
+    else player.unload()
+    pending = undefined
+  }
   pushState()
 }
 
@@ -203,7 +258,7 @@ function state(): AppState {
     platform: process.platform,
     lang: lang(),
     langSetting: settings.data.lang,
-    storyboard: loaded,
+    doc: doc && { path: doc.path, example: doc.example, rev: doc.rev },
     loadError,
     examples: examples(),
     recent: settings.data.recent,
@@ -212,24 +267,40 @@ function state(): AppState {
     selftest: settings.data.selftest,
     selftestRunning,
     capturable: CAPTURABLE,
+    picking,
+    rehearsal,
   }
 }
 
-function createControl() {
+/** `hidden`: scripted checks only (CUELIGHT_DEV_STDIN with CUELIGHT_HEADLESS); never shown. */
+function createControl(hidden = false) {
   control = new BrowserWindow({
-    width: 1140,
-    height: 800,
-    minWidth: 920,
-    minHeight: 640,
+    width: 1240,
+    height: 820,
+    minWidth: 1040,
+    minHeight: 660,
     show: false,
     title: 'Cuelight',
     titleBarStyle: 'hiddenInset',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#111111' : '#f4f3ef',
     webPreferences: { preload: join(import.meta.dirname, '../preload/control.cjs'), sandbox: true, contextIsolation: true },
   })
-  control.once('ready-to-show', () => control?.show())
+  if (!hidden) control.once('ready-to-show', () => control?.show())
   control.on('closed', () => {
     control = null
+  })
+  // The editor holds back the close while it has unsaved changes; ask what to do.
+  control.webContents.on('will-prevent-unload', (e) => {
+    const zh = lang() === 'zh'
+    const choice = dialog.showMessageBoxSync(control!, {
+      type: 'question',
+      buttons: zh ? ['放弃修改', '取消'] : ['Discard changes', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: zh ? '分镜有未保存的修改' : 'The storyboard has unsaved changes',
+      detail: zh ? '关掉的话，这些修改会丢失。' : 'If you close now, they are lost.',
+    })
+    if (choice === 0) e.preventDefault()
   })
   control.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url)
@@ -263,15 +334,30 @@ function ipc() {
   ipcMain.handle('storyboard:path', (_e, p: string) => {
     if (settings.data.recent.includes(p)) openStoryboard(p)
   })
+  ipcMain.handle('storyboard:new', () => setDoc({ path: null, example: false, rev: ++docRev, json: blank() }))
+  ipcMain.handle('storyboard:close', () => setDoc(null))
+  ipcMain.handle('storyboard:doc', () => doc)
+  ipcMain.handle('storyboard:draft', (_e, json: unknown) => {
+    if (!doc) return
+    doc = { ...doc, json }
+    applyDraft(json)
+  })
+  ipcMain.handle('storyboard:save', (_e, json: unknown, saveAs: boolean) => save(json, !!saveAs))
   ipcMain.handle('player:play', (_e, from?: number) => player.start(typeof from === 'number' ? from : 0))
+  ipcMain.handle('player:rehearse', (_e, i: number) => {
+    if (typeof i === 'number' && player.phase === 'idle') player.start(i, { single: true })
+  })
   ipcMain.handle('player:stop', () => player.stop())
+  ipcMain.handle('pick', (_e, on: boolean) => {
+    if (on && (player.phase !== 'idle' || !bridge.connected())) return { ok: false }
+    picking = !!on
+    bridge.send({ t: 'pick', on: picking })
+    pushState()
+    return { ok: true }
+  })
   ipcMain.handle('selftest:run', () => selftest())
   ipcMain.handle('settings:lang', (_e, l: AppState['langSetting']) => {
     if (l === 'auto' || l === 'en' || l === 'zh') settings.update({ lang: l })
-    if (loaded) {
-      const r = readStoryboard(loaded.path)
-      if (r.ok) loaded = summarize(loaded.path, r.sb)
-    }
     pushState()
   })
   ipcMain.handle('bridge:code', () => bridge.newCode())
@@ -330,11 +416,28 @@ app.whenReady().then(async () => {
     onEvent: (e) => {
       log(e)
       if (e.type === 'phase') onPhase(e.phase)
+      if (e.type === 'rehearsed') {
+        rehearsal = { n: e.n, reason: e.reason, secs: e.secs, est: e.est, at: Date.now() }
+        pushState()
+      }
     },
   })
   bridge.on('message', (m) => {
     if (LOG && m.t !== 'rect' && m.t !== 'pointer') log({ type: 'web', m })
     if (LOG && m.t === 'rect') log({ type: 'rect', seq: m.seq, rect: m.rect, found: m.found, offscreen: m.offscreen })
+    if (m.t === 'picked' || m.t === 'pick-end') {
+      if (!picking) return
+      picking = false
+      control?.webContents.send('pick:result', m.t === 'picked' ? m.pick : null)
+      // Back to the editor to see what was picked.
+      if (m.t === 'picked' && control && !HEADLESS) {
+        if (control.isMinimized()) control.restore()
+        app.focus({ steal: true })
+        control.focus()
+      }
+      pushState()
+      return
+    }
     player.onWeb(m)
   })
   bridge.on('authed', () => player.resendTarget())
@@ -348,10 +451,34 @@ app.whenReady().then(async () => {
 
   ipc()
   if (!HEADLESS) createControl()
+  else if (DEV_STDIN) createControl(true)
+  if (DEV_STDIN) devStdin()
 
   const file = opt('--open')
   if (file && openStoryboard(resolve(file)) && flag('--play')) player.start(Math.max(0, Number(opt('--from') ?? 1) - 1))
 })
+
+/** Development only: scripted checks drive the control window over stdin (see the header). */
+function devStdin() {
+  readline.createInterface({ input: process.stdin }).on('line', async (line) => {
+    let c: { id?: number; cmd?: string; js?: string; path?: string }
+    try {
+      c = JSON.parse(line)
+    } catch {
+      return
+    }
+    try {
+      if (!control) throw new Error('no control window')
+      if (c.cmd === 'eval') log({ type: 'eval', id: c.id, ok: true, value: await control.webContents.executeJavaScript(String(c.js), true) })
+      else if (c.cmd === 'shot') {
+        writeFileSync(String(c.path), (await control.webContents.capturePage()).toPNG())
+        log({ type: 'shot', id: c.id, ok: true, path: c.path })
+      }
+    } catch (e) {
+      log({ type: c.cmd ?? 'stdin', id: c.id, ok: false, error: String((e as Error).message ?? e) })
+    }
+  })
+}
 
 app.on('second-instance', () => {
   if (HEADLESS) return

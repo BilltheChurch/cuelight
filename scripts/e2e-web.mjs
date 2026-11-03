@@ -15,7 +15,7 @@
 // CHROMIUM must be a build that still honours --load-extension (Chromium or Chrome for Testing).
 // To test the browser people actually use, set CHROME instead to a branded Chrome or Edge binary,
 // e.g. CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome": it still runs in a
-// fresh throwaway profile, and the extension goes in through CDP (see launchBranded).
+// fresh throwaway profile, and the extension goes in through CDP (see launchBranded in e2e-lib.mjs).
 // Set E2E_PROXY=http://host:port if the browser needs a proxy to reach the example site;
 // loopback, and so the app bridge, always bypasses it.
 //
@@ -23,21 +23,11 @@
 // of it per step, so you can check by eye that the spotlight sits on the element. With --docs the
 // badge stays off (README screenshots); with --recorded the overlay stays protected, so the grabs
 // show what a screen recorder gets.
-import { execFileSync, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import readline from 'node:readline'
-import { chromium } from 'playwright-core'
+import { arg, esc, launchBrowser, pair, pw, root, sleep, startApp, windowBounds } from './e2e-lib.mjs'
 
-const require = createRequire(import.meta.url)
-const root = new URL('..', import.meta.url).pathname
-const WebSocket = require(join(root, 'apps/desktop/node_modules/ws'))
-const arg = (k) => {
-  const i = process.argv.indexOf(k)
-  return i > 0 ? process.argv[i + 1] : undefined
-}
 const name = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'todomvc'
 const zoom = Number(arg('--zoom') ?? 1)
 const shots = arg('--shots')
@@ -45,97 +35,23 @@ const shotMode = process.argv.includes('--recorded') ? 'recorded' : process.argv
 const headed = process.argv.includes('--headed') || !!shots
 const file = join(root, 'examples', `${name}.json`)
 const sb = JSON.parse(readFileSync(file, 'utf8'))
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const devToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-const userData = mkdtempSync(join(tmpdir(), 'cuelight-e2e-app-'))
-if (arg('--lang')) writeFileSync(join(userData, 'settings.json'), JSON.stringify({ lang: arg('--lang') }))
 
-// ---------------------------------------------------------------- app
-const events = []
-const waiters = []
-const app = spawn(join(root, 'apps/desktop/node_modules/.bin/electron'), ['.', '--log', '--open', file], {
-  cwd: join(root, 'apps/desktop'),
-  env: { ...process.env, CUELIGHT_DEV_TOKEN: devToken, CUELIGHT_USER_DATA: userData, CUELIGHT_HEADLESS: headed ? '0' : '1', CUELIGHT_CAPTURABLE: !shots || shotMode === 'recorded' ? '0' : shotMode === 'docs' ? 'docs' : '1' },
-  stdio: ['ignore', 'pipe', 'inherit'],
+const app = startApp({
+  args: ['--open', file],
+  headed,
+  lang: arg('--lang'),
+  env: { CUELIGHT_CAPTURABLE: !shots || shotMode === 'recorded' ? '0' : shotMode === 'docs' ? 'docs' : '1' },
 })
-readline.createInterface({ input: app.stdout }).on('line', (l) => {
-  if (!l.startsWith('CUELIGHT ')) return
-  const e = JSON.parse(l.slice(9))
-  events.push(e)
-  if (e.type !== 'rect') console.log('  app:', JSON.stringify(e))
-  for (const w of [...waiters]) if (w.test(e)) (waiters.splice(waiters.indexOf(w), 1), w.resolve(e))
-})
-const waitEvent = (test, ms = 30_000, what = 'event') =>
-  new Promise((resolve, reject) => {
-    const hit = events.find(test)
-    if (hit) return resolve(hit)
-    const w = { test, resolve }
-    waiters.push(w)
-    setTimeout(() => reject(new Error(`timed out waiting for ${what}`)), ms)
-  })
-const waitNext = (test, ms, what) => {
-  const from = events.length
-  return waitEvent((e) => events.indexOf(e) >= from && test(e), ms, what)
-}
+const { events, waitEvent, waitNext, control } = app
 
-let ctl
-async function control(cmd) {
-  if (!ctl) {
-    const { port } = events.find((e) => e.type === 'bridge')
-    ctl = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'chrome-extension://cuelight-e2e' })
-    await new Promise((r, j) => (ctl.once('open', r), ctl.once('error', j)))
-    ctl.send(JSON.stringify({ t: 'hello', v: 1, token: devToken, browser: 'e2e', ext: '0' }))
-    await new Promise((r) => ctl.once('message', r))
-  }
-  ctl.send(JSON.stringify({ t: 'control', cmd }))
-}
-
-// ---------------------------------------------------------------- browser
-const ext = join(root, 'apps/extension/dist')
-const profile = mkdtempSync(join(tmpdir(), 'cuelight-e2e-'))
-// A raw flag rather than Playwright's proxy option, which would also route loopback through it.
-const browserArgs = [
-  '--window-position=80,90',
-  '--window-size=1360,880',
-  '--no-first-run',
-  '--no-default-browser-check',
-  // The translate bubble pops up over English pages in a non-English Chrome and covers the shots.
-  '--disable-features=Translate',
-  ...(process.env.E2E_PROXY ? [`--proxy-server=${process.env.E2E_PROXY}`] : []),
-]
-let ctx
+let browser
 let viewOrigin = null
-let closeBrowser = async () => {}
 const failures = []
 try {
   const bridge = await waitEvent((e) => e.type === 'bridge', 20_000, 'app bridge')
-  if (process.env.CHROME) {
-    const b = await launchBranded(process.env.CHROME)
-    ctx = b.ctx
-    closeBrowser = b.close
-  } else {
-    ctx = await chromium.launchPersistentContext(profile, {
-      executablePath: process.env.CHROMIUM,
-      headless: !headed,
-      viewport: null,
-      chromiumSandbox: true,
-      args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`, ...browserArgs],
-    })
-    closeBrowser = () => ctx.close()
-  }
-  const sw = ctx.serviceWorkers().find((w) => w.url().startsWith('chrome-extension://')) ?? (await ctx.waitForEvent('serviceworker'))
-  const extId = new URL(sw.url()).host
-  console.log('extension', extId)
-
-  // Pair exactly like a person would: open the popup, type the code from the app.
-  const popup = await ctx.newPage()
-  await popup.goto(`chrome-extension://${extId}/popup.html`)
-  await popup.waitForSelector('#status[data-state=unpaired]')
-  await popup.fill('#code', bridge.code)
-  await popup.click('#pair-btn')
-  await popup.waitForSelector('#status[data-state=connected]', { timeout: 10_000 })
-  console.log('paired')
-  await popup.close()
+  browser = await launchBrowser({ headed })
+  const { ctx, sw, extId } = browser
+  await pair(ctx, extId, bridge.code)
 
   const page = ctx.pages()[0]
   await page.bringToFront()
@@ -237,11 +153,8 @@ try {
 } catch (e) {
   failures.push(String(e.message ?? e))
 } finally {
-  ctl?.close()
-  await closeBrowser().catch(() => {})
-  app.kill()
-  rmSync(profile, { recursive: true, force: true })
-  rmSync(userData, { recursive: true, force: true })
+  await browser?.close()
+  await app.close()
 }
 
 if (failures.length) {
@@ -251,37 +164,6 @@ if (failures.length) {
 console.log(`\nPASS ${name} (zoom ${zoom}, ${headed ? 'headed' : 'headless'}): ${sb.steps.length} steps`)
 
 // ---------------------------------------------------------------- helpers
-
-function esc(s) {
-  return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function textArg(m) {
-  if (typeof m === 'string') return { v: m, exact: false }
-  if ('exact' in m) return { v: m.exact, exact: true }
-  return { v: new RegExp(m.re, m.flags), exact: false }
-}
-
-/** Playwright equivalent of the subset of DOM locators the examples use. */
-function pw(page, l, scope = page) {
-  if (!l) return null
-  if (l.within) scope = pw(page, l.within, scope)
-  let loc
-  if (l.testId) loc = scope.getByTestId(l.testId)
-  else if (l.css) loc = scope.locator(l.css)
-  else if (l.role) {
-    const nm = l.name && textArg(l.name)
-    loc = scope.getByRole(l.role, nm ? { name: nm.v, exact: nm.exact } : {})
-  } else {
-    const t = textArg(l.text)
-    loc = scope.getByText(t.v, { exact: t.exact })
-  }
-  if (l.text && (l.testId || l.css || l.role)) {
-    const t = textArg(l.text)
-    loc = loc.filter({ hasText: t.exact ? new RegExp(`^\\s*${esc(t.v)}\\s*$`) : t.v })
-  }
-  return loc.nth(l.nth ?? 0)
-}
 
 /**
  * Where the element really is on screen: the viewport origin Chromium itself uses (see
@@ -340,34 +222,4 @@ async function settled(page, loc, seq) {
   }
   const latest = events.findLast((e) => e.type === 'rect' && e.seq === seq && e.found && e.rect)
   return { latest, truth }
-}
-
-/**
- * Branded Chrome and Edge ignore --load-extension since 137, but still install an unpacked
- * extension through CDP Extensions.loadUnpacked. That call only answers on the
- * --remote-debugging-pipe connection, which is the one Playwright launches with anyway.
- */
-async function launchBranded(exe) {
-  const ctx = await chromium.launchPersistentContext(profile, {
-    executablePath: exe,
-    headless: !headed,
-    viewport: null,
-    chromiumSandbox: true,
-    ignoreDefaultArgs: ['--disable-extensions'],
-    args: ['--enable-unsafe-extension-debugging', ...browserArgs],
-  })
-  const cdp = await ctx.browser().newBrowserCDPSession()
-  const { product } = await cdp.send('Browser.getVersion')
-  const { id } = await cdp.send('Extensions.loadUnpacked', { path: ext })
-  console.log(`loaded unpacked into ${product}:`, id)
-  return { ctx, close: () => ctx.close() }
-}
-
-/** The browser window's frame in screen points, as the browser itself reports it. */
-async function windowBounds(page) {
-  const cdp = await page.context().newCDPSession(page)
-  const { windowId } = await cdp.send('Browser.getWindowForTarget')
-  const { bounds } = await cdp.send('Browser.getWindowBounds', { windowId })
-  await cdp.detach()
-  return bounds
 }

@@ -5,7 +5,7 @@
  */
 import { mightContain, normalizeSpace, textMatcher, urlMatches, type DomLocator, type DomQuery, type TextMatch } from '@cuelight/schema'
 
-const TEST_ID_ATTRS = ['data-testid', 'data-test-id', 'data-test', 'data-cy', 'data-qa']
+export const TEST_ID_ATTRS = ['data-testid', 'data-test-id', 'data-test', 'data-cy', 'data-qa']
 const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG'])
 
 export type LocateEnv = {
@@ -39,6 +39,13 @@ export function resolveTarget(locators: DomLocator[], env: LocateEnv, doc: Docum
 }
 
 export function query(root: ParentNode, q: DomQuery, env: LocateEnv): Element | null {
+  let el: Element | null = queryAll(root, q, env)[q.nth ?? 0] ?? null
+  if (el && q.closest) el = el.closest(q.closest)
+  return el
+}
+
+/** Every visible match of a query, in document order, before `nth` and `closest` apply. */
+export function queryAll(root: ParentNode, q: DomQuery, env: LocateEnv): Element[] {
   let found: Element[]
   if (q.testId) found = byTestId(root, q.testId)
   else if (q.css) found = safeAll(root, q.css)
@@ -55,12 +62,10 @@ export function query(root: ParentNode, q: DomQuery, env: LocateEnv): Element | 
     const m = textMatcher(q.text)
     found = found.filter((e) => m(textOf(e)))
   }
-  let el: Element | null = found.filter(env.visible)[q.nth ?? 0] ?? null
-  if (el && q.closest) el = el.closest(q.closest)
-  return el
+  return found.filter(env.visible)
 }
 
-const textOf = (e: Element) => normalizeSpace(e.textContent ?? '')
+export const textOf = (e: Element) => normalizeSpace(e.textContent ?? '')
 
 function safeAll(root: ParentNode, css: string): Element[] {
   try {

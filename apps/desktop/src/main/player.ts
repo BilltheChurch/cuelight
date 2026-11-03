@@ -34,10 +34,15 @@ const CLICK_SETTLE_MS = 250
 
 export type Phase = 'idle' | 'preroll' | 'step' | 'done'
 
+export type AdvanceReason = 'click' | 'read' | 'until' | 'timeout' | 'secs' | 'key' | 'skip-optional'
+
 export type PlayerEvent =
   | { type: 'phase'; phase: Phase }
   | { type: 'step'; n: number; id: string; act: Step['act']; seq: number }
-  | { type: 'advance'; from: number; reason: 'click' | 'read' | 'until' | 'timeout' | 'secs' | 'key' | 'skip-optional' }
+  /** `secs`: how long the presenter spent on the step */
+  | { type: 'advance'; from: number; reason: AdvanceReason; secs: number }
+  /** A single-step rehearsal ended. `est`: how long the line takes to say, if it has one */
+  | { type: 'rehearsed'; n: number; reason: AdvanceReason; secs: number; est: number | null }
   | { type: 'inside'; inside: boolean; by: 'page' | 'os' }
 
 export type PlayerDeps = {
@@ -75,6 +80,8 @@ export class Player {
   hidden = false
 
   private dir: 1 | -1 = 1
+  /** Rehearsing one step: no preroll, and the player stops when that step is done */
+  private single = false
   private startedAt = 0
   private lastTick = 0
   private light: Light = { rect: null, found: false, offscreen: null, from: null }
@@ -102,11 +109,20 @@ export class Player {
     this.status()
   }
 
-  start(from = 0) {
+  /** The storyboard being edited no longer validates: nothing to play until it does. */
+  unload() {
+    this.stop()
+    this.sb = null
+    this.status()
+  }
+
+  start(from = 0, opts: { single?: boolean } = {}) {
     if (!this.sb) return
     this.i = Math.max(0, Math.min(from, this.sb.steps.length - 1))
     this.hidden = false
+    this.single = !!opts.single
     this.d.overlay.show()
+    if (this.single) return this.enter(this.i, 1)
     this.setPhase('preroll')
     this.seq++
     this.d.web.target(null)
@@ -132,6 +148,7 @@ export class Player {
   }
 
   stop() {
+    this.single = false
     if (this.phase === 'idle') return
     this.seq++
     this.d.web.target(null)
@@ -149,7 +166,7 @@ export class Player {
   }
 
   prev() {
-    if (!this.sb) return
+    if (!this.sb || this.single) return
     if (this.phase === 'step') {
       if (this.i > 0) this.enter(this.i - 1, -1)
     } else if (this.phase === 'done') this.enter(this.sb.steps.length - 1, -1)
@@ -247,9 +264,15 @@ export class Player {
 
   // ---------------------------------------------------------------- internals
 
-  private advance(d: 1 | -1, reason: Extract<PlayerEvent, { type: 'advance' }>['reason']) {
+  private advance(d: 1 | -1, reason: AdvanceReason) {
     if (!this.sb) return
-    this.d.onEvent?.({ type: 'advance', from: this.i + 1, reason })
+    const secs = Math.round(this.d.now() - this.startedAt) / 1000
+    this.d.onEvent?.({ type: 'advance', from: this.i + 1, reason, secs })
+    if (this.single) {
+      const st = this.sb.steps[this.i]
+      this.d.onEvent?.({ type: 'rehearsed', n: this.i + 1, reason, secs, est: st.say ? readSecs(st, this.sb.pace) : null })
+      return this.stop()
+    }
     const ni = this.i + d
     if (ni >= this.sb.steps.length) return this.finish()
     this.enter(Math.max(0, ni), d)

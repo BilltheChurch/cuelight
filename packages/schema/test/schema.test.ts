@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   cue,
+  formatJson,
   howKind,
   parseStoryboard,
   placeCard,
@@ -142,5 +143,20 @@ describe('geometry', () => {
     expect(placeCard([900, 50, 500, 800], card, scr)).toEqual({ x: 478, y: 375 })
     expect(placeCard(null, card, scr)).toEqual({ x: 520, y: 54 })
     expect(placeCard(null, card, scr, 'bottom')).toEqual({ x: 520, y: 660 })
+  })
+})
+
+describe('formatJson', () => {
+  it('keeps short objects on one line and opens long ones', () => {
+    const out = formatJson({ a: 1, list: [{ kind: 'dom', css: 'x' }], long: 'y'.repeat(150) }, 60)
+    expect(out).toBe(`{\n  "a": 1,\n  "list": [{ "kind": "dom", "css": "x" }],\n  "long": "${'y'.repeat(150)}"\n}\n`)
+    expect(formatJson({ a: [], b: {} })).toBe('{ "a": [], "b": {} }\n')
+  })
+
+  it('round-trips every bundled example', () => {
+    for (const f of readdirSync(examplesDir)) {
+      const src = readFileSync(new URL(f, examplesDir), 'utf8')
+      expect(JSON.parse(formatJson(JSON.parse(src)))).toEqual(JSON.parse(src))
+    }
   })
 })

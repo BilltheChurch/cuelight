@@ -17,6 +17,8 @@ let show: PopupState['show'] = null
 let target: WebTarget | null = null
 let stageTab: number | null = null
 let pendingCode: string | null = null
+/** The editor asked for an element: the stage tab runs the picker until a pick or Esc */
+let picking = false
 let retry: ReturnType<typeof setTimeout> | null = null
 let ping: ReturnType<typeof setInterval> | null = null
 let backoff = 1000
@@ -157,6 +159,10 @@ function onApp(m: AppMessage) {
     case 'navigate':
       void navigate(m.url)
       return
+    case 'pick':
+      picking = m.on
+      void pushPick()
+      return
     case 'status':
       show = { playing: m.playing, n: m.n, total: m.total, title: m.title, loaded: m.loaded }
       setStatus(status)
@@ -185,9 +191,21 @@ async function refreshStage(force = false) {
   if (id === stageTab && !force) return
   const old = stageTab
   stageTab = id
-  if (old !== null && old !== id) void tell(old, { t: 'target', target: null, zoom: 1, corr: null })
+  if (old !== null && old !== id) {
+    void tell(old, { t: 'target', target: null, zoom: 1, corr: null })
+    if (picking) void tell(old, { t: 'pick', on: false })
+  }
   if (target) send({ t: 'rect', seq: target.seq, rect: null, found: false, offscreen: null, url: tab?.url ?? '' })
   await pushTarget()
+  if (picking) await pushPick()
+}
+
+async function pushPick() {
+  if (stageTab === null) await refreshStage()
+  if (stageTab === null) return
+  const ok = await tell(stageTab, { t: 'pick', on: picking })
+  // No content script yet: inject one; its "ready" brings the picker up.
+  if (!ok && picking) await chrome.scripting.executeScript({ target: { tabId: stageTab }, files: ['content.js'] }).catch(() => {})
 }
 
 async function pushTarget() {
@@ -251,8 +269,10 @@ chrome.runtime.onMessage.addListener((m: FromContent | FromPopup, sender, reply)
     const msg = m as FromContent
     if (msg.t === 'ready') {
       const id = sender.tab.id
-      if (id === stageTab) void pushTarget()
-      else {
+      if (id === stageTab) {
+        void pushTarget()
+        if (picking) void pushPick()
+      } else {
         void zoomOf(id).then((zoom) => tell(id, { t: 'zoom', zoom }))
         if (stageTab === null) void refreshStage()
       }
@@ -263,6 +283,11 @@ chrome.runtime.onMessage.addListener((m: FromContent | FromPopup, sender, reply)
       corrByWindow.set(sender.tab.windowId, lastCorr)
       void chrome.storage.local.set({ corr: lastCorr })
       return
+    }
+    if (msg.t === 'picked' || msg.t === 'pick-end') {
+      if (!picking) return
+      picking = false
+      return send(msg)
     }
     if (sender.tab.id === stageTab) send(msg)
     return
@@ -297,7 +322,7 @@ chrome.runtime.onMessage.addListener((m: FromContent | FromPopup, sender, reply)
 })
 
 // For debugging from the service worker console: __cuelight()
-;(globalThis as { __cuelight?: () => object }).__cuelight = () => ({ status, port, error, stageTab, target, pendingCode: !!pendingCode, ws: ws?.readyState ?? null })
+;(globalThis as { __cuelight?: () => object }).__cuelight = () => ({ status, port, error, stageTab, target, picking, pendingCode: !!pendingCode, ws: ws?.readyState ?? null })
 
 chrome.alarms.create('cuelight-reconnect', { periodInMinutes: 0.5 })
 chrome.alarms.onAlarm.addListener(() => void connect())

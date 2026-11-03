@@ -5,22 +5,19 @@ import {
   CircleAlert,
   CircleCheck,
   CircleHelp,
-  Clock,
   FileJson,
+  FilePlus,
   FolderOpen,
-  Hourglass,
-  Keyboard,
   ListChecks,
   Mic,
-  MousePointerClick,
-  Play,
   RefreshCw,
   ShieldCheck,
   Square,
   type LucideIcon,
 } from 'lucide-react'
-import { keyLabels, type Act } from '@cuelight/schema'
+import { keyLabels } from '@cuelight/schema'
 import type { AppState, ControlApi, ProbeResult } from '../../../shared/types.ts'
+import { Editor } from './editor.tsx'
 import { fill, strings, type Strings } from './i18n.ts'
 import './control.css'
 
@@ -33,7 +30,6 @@ declare global {
 const api = window.cuelight
 
 const EXAMPLE_ICON: Record<string, LucideIcon> = { todomvc: ListChecks, 'wikipedia-tour': BookOpen, 'talk-only': Mic }
-const ACT_ICON: Record<Act, LucideIcon> = { click: MousePointerClick, read: Mic, wait: Hourglass, manual: Keyboard }
 
 function App() {
   const [s, setS] = useState<AppState | null>(null)
@@ -58,7 +54,7 @@ function App() {
       <main className="grid">
         <section className="main">
           {s.player.phase !== 'idle' && <NowPlaying s={s} t={t} keys={keys} />}
-          {s.storyboard ? <Loaded s={s} t={t} /> : <Picker s={s} t={t} />}
+          {s.doc ? <Editor s={s} t={t} /> : <Picker s={s} t={t} />}
           {s.loadError && (
             <div className="tile error">
               <div className="row-title">
@@ -110,10 +106,6 @@ function App() {
   )
 }
 
-function duration(secs: number, t: Strings) {
-  return secs >= 90 ? fill(t.minutes, { m: Math.round(secs / 60) }) : fill(t.seconds, { s: secs })
-}
-
 function Picker({ s, t }: { s: AppState; t: Strings }) {
   return (
     <>
@@ -122,6 +114,13 @@ function Picker({ s, t }: { s: AppState; t: Strings }) {
         <p className="muted">{t.pickSub}</p>
       </div>
       <div className="tiles">
+        <button className="choice" onClick={() => void api.newDoc()}>
+          <span className="choice-icon">
+            <FilePlus size={22} />
+          </span>
+          <strong>{t.newBoard}</strong>
+          <span className="muted">{t.newBoardSub}</span>
+        </button>
         <button className="choice" onClick={() => void api.openDialog()}>
           <span className="choice-icon">
             <FolderOpen size={22} />
@@ -157,65 +156,6 @@ function Picker({ s, t }: { s: AppState; t: Strings }) {
           </ul>
         </div>
       )}
-    </>
-  )
-}
-
-function Loaded({ s, t }: { s: AppState; t: Strings }) {
-  const sb = s.storyboard!
-  const idle = s.player.phase === 'idle'
-  return (
-    <>
-      <div className="tile hero">
-        <div>
-          <h1>{sb.title}</h1>
-          {sb.description && <p className="muted">{sb.description}</p>}
-          <div className="chips">
-            <span className="chip">{fill(t.steps, { n: sb.steps.length })}</span>
-            <span className="chip">
-              <Clock size={13} /> {duration(sb.estSecs, t)}
-            </span>
-            {sb.language && <span className="chip">{sb.language}</span>}
-          </div>
-          <p className="muted mono small path">{sb.path}</p>
-        </div>
-        <div className="hero-actions">
-          <button className="primary big" disabled={!idle} onClick={() => void api.play(0)}>
-            <Play size={18} /> {t.play}
-          </button>
-          <button className="secondary" disabled={!idle} onClick={() => void api.openDialog()}>
-            {t.another}
-          </button>
-        </div>
-      </div>
-      <ol className="steps">
-        {sb.steps.map((st) => {
-          const Icon = ACT_ICON[st.act]
-          const current = !idle && s.player.phase === 'step' && s.player.n === st.n
-          return (
-            <li key={st.n} className={current ? 'current' : ''}>
-              <span className="n">{st.n}</span>
-              <span className="act" title={st.act}>
-                <Icon size={16} />
-              </span>
-              <span className="text">
-                <strong>{st.tag}</strong>
-                {st.say && <span className="muted">{st.say}</span>}
-              </span>
-              <span className="kinds">
-                {(st.kinds.length ? st.kinds : [t.talk]).map((k) => (
-                  <span key={k} className="chip small">
-                    {k}
-                  </span>
-                ))}
-              </span>
-              <button className="ghost" disabled={!idle} onClick={() => void api.play(st.n - 1)}>
-                {t.playFrom}
-              </button>
-            </li>
-          )
-        })}
-      </ol>
     </>
   )
 }

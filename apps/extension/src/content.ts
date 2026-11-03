@@ -7,6 +7,8 @@
 import { inflate, contains, spotlightRect, urlMatches, type Rect, type Viewport, type WebTarget } from '@cuelight/schema'
 import { isVisible, pageEnv, resolveTarget } from './locate.ts'
 import type { Correction, ToContent, FromContent } from './messages.ts'
+import { Picker } from './picker.ts'
+import { describe, suggestLocators } from './suggest.ts'
 
 /** Same padding the overlay puts around the spotlight, in screen points */
 const PAD = 10
@@ -119,7 +121,18 @@ function stop() {
   target = null
   if (raf) cancelAnimationFrame(raf)
   raf = 0
+  picker.stop()
 }
+
+// ---------------------------------------------------------------- picking a target for the editor
+
+const picker = new Picker(
+  (el) => {
+    const { label, role } = describe(el)
+    send({ t: 'picked', pick: { locators: suggestLocators(el, pageEnv()), label, role, url: location.href, title: document.title } })
+  },
+  () => send({ t: 'pick-end' }),
+)
 
 // ---------------------------------------------------------------- presenter input
 
@@ -202,6 +215,10 @@ chrome.runtime.onMessage.addListener((m: ToContent, _sender, reply) => {
     start(m.target, m.zoom)
   }
   if (m.t === 'zoom') setZoom(m.zoom)
+  if (m.t === 'pick') {
+    if (m.on) picker.start()
+    else picker.stop()
+  }
   if (m.t === 'probe') reply({ ok: true })
   if (m.t === 'debug') reply({ calib, corr, zoom, screenX, screenY, outerHeight, innerHeight, innerWidth, outerWidth, dpr: devicePixelRatio, rect: lastRect })
 })

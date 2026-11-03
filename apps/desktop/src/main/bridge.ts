@@ -130,8 +130,8 @@ export class Bridge extends EventEmitter<{ message: [ExtMessage]; change: []; au
         this.emit('change')
         return
       }
-      // Only the active browser drives the spotlight; hotkey-style controls come from any.
-      if (c === this.active || m.t === 'control') this.emit('message', m)
+      // Only the active browser drives the spotlight; hotkey-style controls and picks come from any.
+      if (c === this.active || m.t === 'control' || m.t === 'picked' || m.t === 'pick-end') this.emit('message', m)
     })
     ws.on('close', () => {
       clearTimeout(timer)

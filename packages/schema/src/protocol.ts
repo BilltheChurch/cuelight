@@ -25,12 +25,25 @@ export type WebUntil = Omit<Until, 'appear' | 'gone'> & { appear?: DomLocator[];
 
 export type Offscreen = 'below' | 'above' | null
 
+/** An element the presenter picked in the browser for the editor. */
+export type Picked = {
+  /** Fallback chain, most stable signal first; each entry resolves back to the picked element */
+  locators: DomLocator[]
+  /** Short human label: the accessible name or the visible text */
+  label: string
+  role: string | null
+  url: string
+  title: string
+}
+
 // ---------------------------------------------------------------- app → extension
 export type AppMessage =
   | { t: 'welcome'; v: number; token?: string; app: string }
   | { t: 'denied'; reason: 'bad-code' | 'bad-token' | 'locked' | 'version' }
   | { t: 'target'; target: WebTarget | null }
   | { t: 'navigate'; url: string }
+  /** Editor: start or stop the element picker in the stage tab */
+  | { t: 'pick'; on: boolean }
   | { t: 'status'; playing: boolean; n: number; total: number; title: string; loaded: boolean }
   | { t: 'pong' }
 
@@ -51,4 +64,7 @@ export type ExtMessage =
   | { t: 'until'; seq: number }
   | { t: 'focus'; focused: boolean }
   | { t: 'control'; cmd: 'play' | 'next' | 'prev' | 'hide' | 'stop' }
+  | { t: 'picked'; pick: Picked }
+  /** The picker closed without a pick (Esc, or the tab went away) */
+  | { t: 'pick-end' }
   | { t: 'ping' }

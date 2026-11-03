@@ -1,5 +1,5 @@
 /** Types shared by the main process, preloads and renderers. */
-import type { Act, HintKind, HowKind, Lang, Rect } from '@cuelight/schema'
+import type { HintKind, HowKind, Lang, Picked, Rect } from '@cuelight/schema'
 
 export type CardKind = HowKind | 'preroll' | 'done'
 
@@ -61,16 +61,15 @@ export type SelftestResult = {
   probes: ProbeResult[]
 }
 
-export type StepSummary = { n: number; act: Act; tag: string; say: string; hasTarget: boolean; kinds: string[] }
+/** The storyboard open in the editor. `rev` changes when a different file (or a new one) is opened. */
+export type DocInfo = { path: string | null; example: boolean; rev: number }
 
-export type LoadedStoryboard = {
-  path: string
-  title: string
-  description: string | null
-  language: string | null
-  steps: StepSummary[]
-  estSecs: number
-}
+/** The JSON as opened, in the author's own shape (not parsed, so it may not validate yet). */
+export type DocPayload = DocInfo & { json: unknown }
+
+export type SaveResult = { ok: true; path: string } | { ok: false; canceled?: boolean; error?: string }
+
+export type Rehearsal = { n: number; reason: string; secs: number; est: number | null; at: number }
 
 export type BrowserInfo = { id: string; browser: string; connected: boolean; active: boolean; lastSeen: string | null }
 
@@ -79,7 +78,7 @@ export type AppState = {
   platform: string
   lang: Lang
   langSetting: 'auto' | Lang
-  storyboard: LoadedStoryboard | null
+  doc: DocInfo | null
   loadError: { path: string; issues: string[] } | null
   examples: { id: string; title: string; description: string; steps: number }[]
   recent: string[]
@@ -88,6 +87,9 @@ export type AppState = {
   selftest: SelftestResult | null
   selftestRunning: boolean
   capturable: boolean
+  /** The browser is waiting for the presenter to pick an element */
+  picking: boolean
+  rehearsal: Rehearsal | null
 }
 
 export type ControlApi = {
@@ -96,8 +98,18 @@ export type ControlApi = {
   openDialog(): Promise<void>
   openExample(id: string): Promise<void>
   openPath(path: string): Promise<void>
+  newDoc(): Promise<void>
+  closeDoc(): Promise<void>
+  getDoc(): Promise<DocPayload | null>
+  /** The editor's current JSON: plays from here on, even before it is saved */
+  setDraft(json: unknown): Promise<void>
+  save(json: unknown, saveAs: boolean): Promise<SaveResult>
   play(from?: number): Promise<void>
+  /** Play just this step, then stop */
+  rehearse(index: number): Promise<void>
   stop(): Promise<void>
+  pick(on: boolean): Promise<{ ok: boolean }>
+  onPick(cb: (p: Picked | null) => void): () => void
   runSelftest(): Promise<SelftestResult>
   setLang(lang: 'auto' | Lang): Promise<void>
   newCode(): Promise<void>

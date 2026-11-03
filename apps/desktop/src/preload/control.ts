@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { Picked } from '@cuelight/schema'
 import type { AppState, ControlApi } from '../shared/types.ts'
 
 const api: ControlApi = {
@@ -11,8 +12,20 @@ const api: ControlApi = {
   openDialog: () => ipcRenderer.invoke('storyboard:dialog'),
   openExample: (id) => ipcRenderer.invoke('storyboard:example', id),
   openPath: (p) => ipcRenderer.invoke('storyboard:path', p),
+  newDoc: () => ipcRenderer.invoke('storyboard:new'),
+  closeDoc: () => ipcRenderer.invoke('storyboard:close'),
+  getDoc: () => ipcRenderer.invoke('storyboard:doc'),
+  setDraft: (json) => ipcRenderer.invoke('storyboard:draft', json),
+  save: (json, saveAs) => ipcRenderer.invoke('storyboard:save', json, saveAs),
   play: (from) => ipcRenderer.invoke('player:play', from),
+  rehearse: (i) => ipcRenderer.invoke('player:rehearse', i),
   stop: () => ipcRenderer.invoke('player:stop'),
+  pick: (on) => ipcRenderer.invoke('pick', on),
+  onPick: (cb) => {
+    const h = (_e: unknown, p: Picked | null) => cb(p)
+    ipcRenderer.on('pick:result', h)
+    return () => ipcRenderer.off('pick:result', h)
+  },
   runSelftest: () => ipcRenderer.invoke('selftest:run'),
   setLang: (l) => ipcRenderer.invoke('settings:lang', l),
   newCode: () => ipcRenderer.invoke('bridge:code'),

@@ -11,11 +11,15 @@ export type Correction = { x: number; y: number }
 export type ToContent =
   | { t: 'target'; target: WebTarget | null; zoom: number; corr: Correction | null }
   | { t: 'zoom'; zoom: number }
+  | { t: 'pick'; on: boolean }
   | { t: 'probe' }
   | { t: 'debug' }
 
 /** content script → background */
-export type FromContent = Extract<ExtMessage, { t: 'rect' | 'click' | 'pointer' | 'until' }> | { t: 'ready' } | ({ t: 'corr' } & Correction)
+export type FromContent =
+  | Extract<ExtMessage, { t: 'rect' | 'click' | 'pointer' | 'until' | 'picked' | 'pick-end' }>
+  | { t: 'ready' }
+  | ({ t: 'corr' } & Correction)
 
 export type BridgeStatus = 'offline' | 'unpaired' | 'connecting' | 'connected' | 'denied'
 

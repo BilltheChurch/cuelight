@@ -207,4 +207,44 @@ describe('Player', () => {
     r.run(2700)
     expect(r.p.i).toBe(1)
   })
+
+  it('rehearses one step without a preroll, reports its time, and stops', () => {
+    const r = rig({
+      cuelight: 1,
+      title: 'T',
+      start: { url: 'https://example.com/' },
+      steps: [
+        { act: 'read', say: 'First.' },
+        { act: 'click', say: 'Six words to read out loud here.', target: dom('#go') },
+        { act: 'manual', say: 'Bye.' },
+      ],
+    })
+    r.p.start(1, { single: true })
+    expect(r.p.phase).toBe('step')
+    expect(r.p.i).toBe(1)
+    expect(r.navigations).toEqual([])
+    r.p.prev()
+    expect(r.p.i).toBe(1)
+    const t = r.targets.at(-1)!
+    r.run(1984)
+    r.p.onWeb({ t: 'rect', seq: t.seq, rect: [100, 100, 80, 30], found: true, offscreen: null, url: 'https://example.com/' })
+    r.p.onWeb({ t: 'click', seq: t.seq })
+    r.run(300)
+    expect(r.p.phase).toBe('idle')
+    const done = r.log.find((e) => e.type === 'rehearsed')
+    expect(done).toMatchObject({ type: 'rehearsed', n: 2, reason: 'click', est: 4.7 })
+    expect(done?.type === 'rehearsed' && done.secs).toBeCloseTo(2.256, 1)
+    expect(r.advance()).toHaveLength(1)
+
+    // A normal run afterwards gets its preroll back.
+    r.p.start(0)
+    expect(r.p.phase).toBe('preroll')
+  })
+
+  it('unloads a storyboard that no longer validates', () => {
+    const r = rig({ cuelight: 1, title: 'T', steps: [{ act: 'manual', say: 'Hi' }] })
+    r.p.unload()
+    r.p.start()
+    expect(r.p.phase).toBe('idle')
+  })
 })
