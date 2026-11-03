@@ -25,13 +25,13 @@ export function readSecs(step: Pick<Step, 'say' | 'secs'>, pace: Partial<Pace> =
   return Math.max(p.minSecs, speechUnits(step.say) / p.unitsPerSec + p.leadSecs)
 }
 
-/** Rough total talk time, for the storyboard summary. Clicks without lines count 1.5 s. */
+/** Planned seconds for one step: its line, a wait (its timeout, else 3 s), or 1.5 s for a silent click. */
+export function stepSecs(s: Step, pace: Partial<Pace> = {}): number {
+  if (s.act === 'wait') return s.secs ?? s.until?.timeoutSecs ?? 3
+  return s.say ? readSecs(s, pace) : 1.5
+}
+
+/** Rough length of a run, for the storyboard summary and exports without a rehearsal. */
 export function estimateSecs(sb: Storyboard): number {
-  let t = 0
-  for (const s of sb.steps) {
-    if (s.act === 'wait') t += s.secs ?? 0
-    else if (s.say) t += readSecs(s, sb.pace)
-    else t += 1.5
-  }
-  return t
+  return sb.steps.reduce((t, s) => t + stepSecs(s, sb.pace), 0)
 }

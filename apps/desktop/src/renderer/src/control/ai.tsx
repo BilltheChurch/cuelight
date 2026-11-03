@@ -18,7 +18,7 @@ const text = (v: unknown) => (typeof v === 'string' ? v : '')
 /** Ask the app to open the AI setup sheet, from wherever the request comes. */
 export const openAiSetup = () => dispatchEvent(new Event('cuelight:ai-setup'))
 
-function Sheet({ label, onClose, wide, children }: { label: string; onClose?: () => void; wide?: boolean; children: ReactNode }) {
+export function Sheet({ label, onClose, wide, children }: { label: string; onClose?: () => void; wide?: boolean; children: ReactNode }) {
   useEffect(() => {
     if (!onClose) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && (e.stopPropagation(), onClose())

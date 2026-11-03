@@ -36,6 +36,7 @@ const api: ControlApi = {
   aiTest: (s) => ipcRenderer.invoke('ai:test', s),
   aiRun: (req) => ipcRenderer.invoke('ai:run', req),
   aiCancel: () => ipcRenderer.invoke('ai:cancel'),
+  exportFile: (ext, text, name) => ipcRenderer.invoke('export:save', ext, text, name),
   onAiProgress: (cb) => {
     const h = (_e: unknown, chars: number) => cb(chars)
     ipcRenderer.on('ai:progress', h)

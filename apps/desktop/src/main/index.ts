@@ -14,6 +14,7 @@
  *   CUELIGHT_HEADLESS=1     invisible test runs: no windows, no Dock icon, no global hotkeys, and the
  *                           real cursor is ignored, so whoever is using the machine is not disturbed;
  *                           AI keys stay in memory, so the keychain is never asked
+ *   CUELIGHT_EXPORT_DIR=... exports are written here without a save dialog (scripts/e2e-export.mjs)
  *   CUELIGHT_DEV_STDIN=1    scripted checks drive the control window over stdin, one JSON command per
  *                           line: {"cmd":"eval","js":...} or {"cmd":"shot","path":...}; with
  *                           CUELIGHT_HEADLESS the window exists but is never shown (scripts/e2e-editor.mjs)
@@ -26,6 +27,7 @@ import {
   formatJson,
   langFromLocale,
   parseStoryboard,
+  runSig,
   setCuePlatform,
   type Lang,
   type Locator,
@@ -40,7 +42,7 @@ import { Bridge } from './bridge.ts'
 import { Helper, HelperError } from './helper.ts'
 import { NativeTargets, axLocatorFor, axTitle, frontWindow, type AxNode, type LocalResult, type OcrLine, type WinInfo } from './native.ts'
 import { OverlayManager } from './overlay.ts'
-import { Player } from './player.ts'
+import { Player, type PlayerEvent } from './player.ts'
 import { runSelftest } from './selftest.ts'
 import { SettingsFile } from './settings.ts'
 
@@ -56,6 +58,7 @@ const CAPTURABLE = !app.isPackaged && (process.env.CUELIGHT_CAPTURABLE === '1' |
 const DEV_TOKEN = !app.isPackaged ? process.env.CUELIGHT_DEV_TOKEN : undefined
 const HEADLESS = !app.isPackaged && process.env.CUELIGHT_HEADLESS === '1'
 const DEV_STDIN = !app.isPackaged && process.env.CUELIGHT_DEV_STDIN === '1'
+const EXPORT_DIR = !app.isPackaged ? process.env.CUELIGHT_EXPORT_DIR : undefined
 /** Headless runs feed the player a cursor that never moves, so only page pointer events count. */
 const NO_CURSOR = { x: -1e6, y: -1e6 }
 
@@ -92,6 +95,9 @@ let picking: 'web' | 'app' | null = null
 /** A run being recorded in the browser, for a draft storyboard */
 let recording: { typed: boolean; events: RecEvent[] } | null = null
 let rehearsal: AppState['rehearsal'] = null
+/** A full run under way (from the preroll on), and the last one that timed any step */
+let run: { sig: string; secs: (number | null)[] } | null = null
+let lastRun: AppState['lastRun'] = null
 let loadError: AppState['loadError'] = null
 let selftestRunning = false
 let ticker: ReturnType<typeof setInterval> | null = null
@@ -178,6 +184,7 @@ function setDoc(d: DocPayload | null) {
   doc = d
   loadError = null
   rehearsal = null
+  lastRun = null
   if (d) applyDraft(d.json)
   else {
     pending = undefined
@@ -278,6 +285,21 @@ function onPhase(phase: Player['phase']) {
     pending = undefined
   }
   pushState()
+}
+
+/**
+ * Times each step of a full run (single-step rehearsals have their own report). Going back and
+ * doing a step again keeps the last try. A run stopped early still counts for the steps it got to.
+ */
+function trackRun(e: PlayerEvent) {
+  if (e.type === 'phase' && e.phase === 'preroll' && player.sb) run = { sig: runSig(player.sb.steps), secs: player.sb.steps.map(() => null) }
+  else if (e.type === 'advance' && run) run.secs[e.from - 1] = e.secs
+  else if (e.type === 'phase' && (e.phase === 'done' || e.phase === 'idle') && run) {
+    if (run.secs.some((x) => x !== null)) lastRun = { at: Date.now(), sig: run.sig, complete: e.phase === 'done', secs: run.secs }
+    log({ type: 'run', complete: e.phase === 'done', secs: run.secs })
+    run = null
+    pushState()
+  }
 }
 
 // ---------------------------------------------------------------- AI
@@ -474,6 +496,7 @@ function state(): AppState {
     native: nativeStatus,
     recording: recording && { typed: recording.typed, count: recording.events.filter((e) => e.k !== 'nav').length, last: lastAction() },
     rehearsal,
+    lastRun,
     ai: aiInfo(),
   }
 }
@@ -652,6 +675,25 @@ function ipc() {
     }
   })
   ipcMain.handle('ai:cancel', () => aiRun?.abort())
+  ipcMain.handle('export:save', async (_e, ext: string, text: string, name: string): Promise<SaveResult> => {
+    if (!['md', 'srt', 'txt'].includes(ext) || typeof text !== 'string') return { ok: false }
+    const file = String(name ?? '').replace(/[/\\:*?"<>|]+/g, '-').slice(0, 100) || `storyboard.${ext}`
+    let path: string
+    if (EXPORT_DIR) path = join(EXPORT_DIR, file)
+    else {
+      const opts = { defaultPath: join(doc?.path && !doc.example ? dirname(doc.path) : app.getPath('documents'), file), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] }
+      const r = control ? await dialog.showSaveDialog(control, opts) : await dialog.showSaveDialog(opts)
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true }
+      path = r.filePath
+    }
+    try {
+      writeFileSync(path, text)
+    } catch (e) {
+      return { ok: false, error: String((e as Error).message) }
+    }
+    log({ type: 'export', ext, path, bytes: Buffer.byteLength(text) })
+    return { ok: true, path }
+  })
 }
 
 // ---------------------------------------------------------------- startup
@@ -727,6 +769,7 @@ app.whenReady().then(async () => {
     now: () => performance.now(),
     onEvent: (e) => {
       log(e)
+      trackRun(e)
       if (e.type === 'phase' || e.type === 'step') watchOsClicks(player.wantsOsClicks)
       if (e.type === 'phase') onPhase(e.phase)
       if (e.type === 'rehearsed') {

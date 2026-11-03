@@ -26,12 +26,14 @@ import {
   Save,
   Settings2,
   Sparkles,
+  Timer,
   Trash2,
   Undo2,
   X,
   type LucideIcon,
 } from 'lucide-react'
 import {
+  clock,
   defaultTag,
   estimateSecs,
   formatJson,
@@ -40,6 +42,8 @@ import {
   parseStoryboard,
   readSecs,
   stepsFromRecording,
+  timeline,
+  totalSecs,
   type Act,
   type Lang,
   type Pace,
@@ -49,6 +53,7 @@ import {
 } from '@cuelight/schema'
 import type { AppState, PickResult } from '../../../shared/types.ts'
 import { AiPanel } from './ai.tsx'
+import { ExportSheet, pace, runFor } from './exporter.tsx'
 import {
   ACTS,
   LOCATOR_ORDER,
@@ -100,6 +105,7 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
   const [toast, setToast] = useState<string | null>(null)
   /** The AI sheet, open on the whole storyboard or the selected step */
   const [ai, setAi] = useState<'all' | 'step' | null>(null)
+  const [exporting, setExporting] = useState(false)
   const doc = h.present
   const steps = doc.steps
   const idle = s.player.phase === 'idle'
@@ -123,6 +129,8 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
   const parsed = useMemo(() => parseStoryboard(doc), [doc])
   const issues = useMemo(() => splitIssues(parsed.ok ? [] : parsed.issues), [parsed])
   const est = parsed.ok ? estimateSecs(parsed.value) : null
+  const lastRun = parsed.ok ? runFor(parsed.value, s.lastRun) : null
+  const measured = parsed.ok && lastRun ? totalSecs(timeline(parsed.value, lastRun.secs)) : null
   const json = useMemo(() => JSON.stringify(doc), [doc])
   const dirty = ready && json !== saved
   /** Lines and labels are written in the storyboard's language, which may not be the UI's. */
@@ -204,6 +212,20 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
     if (!r || Date.now() - r.at > 5000) return
     setToast(r.est ? fill(t.rehearsedEst, { n: r.n, s: r.secs.toFixed(1), e: r.est.toFixed(1) }) : fill(t.rehearsed, { n: r.n, s: r.secs.toFixed(1) }))
   }, [s.rehearsal?.at])
+
+  // After a full run: how long it took against the plan.
+  useEffect(() => {
+    const r = s.lastRun
+    const sb = parsed.ok ? parsed.value : null
+    const run = sb && runFor(sb, r)
+    if (!r || !run || Date.now() - r.at > 5000) return
+    const got = timeline(sb, run.secs)
+    const plan = totalSecs(timeline(sb))
+    const took = totalSecs(got)
+    const d = Math.round(took - plan)
+    const how = pace(took, plan)
+    setToast(fill(how === 'ok' ? t.runDoneOk : how === 'slow' ? t.runDoneSlow : t.runDoneFast, { took: clock(took), d: Math.abs(d) }))
+  }, [s.lastRun?.at])
 
   const save = async (as: boolean) => {
     const d = cur.current.doc
@@ -296,6 +318,11 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
                 <Clock size={13} /> {duration(est, t)}
               </span>
             )}
+            {measured !== null && (
+              <button className="chip chip-link" onClick={() => setExporting(true)} title={t.exportTitle}>
+                <Timer size={13} /> {fill(t.runChip, { took: clock(measured) })}
+              </button>
+            )}
             <span className={'chip ' + (dirty || !info.path ? 'warn' : 'ok')}>{dirty || !info.path ? t.unsaved : t.saved}</span>
           </div>
           <p className="muted mono small path" title={info.path ?? ''}>
@@ -313,6 +340,7 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
           </div>
           <div className="toolbar">
             <IconBtn icon={CircleDot} label={t.recordSteps} disabled={!idle || !!s.recording} onClick={() => void api.record(true, false).then((r) => r.ok || setToast(t.pickNoBrowser))} />
+            <IconBtn icon={Timer} label={t.exportTitle} disabled={!parsed.ok} onClick={() => setExporting(true)} />
             <span className="sep" />
             <IconBtn icon={Undo2} label={`${t.undo} (⌘Z)`} disabled={!h.past.length} onClick={() => dispatch({ type: 'undo' })} />
             <IconBtn icon={Redo2} label={`${t.redo} (⇧⌘Z)`} disabled={!h.future.length} onClick={() => dispatch({ type: 'redo' })} />
@@ -388,6 +416,9 @@ export function Editor({ s, t }: { s: AppState; t: Strings }) {
           />
         )}
       </div>
+      {exporting && parsed.ok && (
+        <ExportSheet sb={parsed.value} run={s.lastRun} lang={boardLang} t={t} onClose={() => setExporting(false)} onToast={setToast} />
+      )}
       {ai && (
         <AiPanel
           doc={doc}

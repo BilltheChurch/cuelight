@@ -70,6 +70,9 @@ export type DocPayload = DocInfo & { json: unknown }
 
 export type SaveResult = { ok: true; path: string } | { ok: false; canceled?: boolean; error?: string }
 
+/** Seconds per step from the last full run; `sig` says which steps they were measured on (runSig). */
+export type RunTimes = { at: number; sig: string; complete: boolean; secs: (number | null)[] }
+
 export type Rehearsal = { n: number; reason: string; secs: number; est: number | null; at: number }
 
 export type BrowserInfo = { id: string; browser: string; connected: boolean; active: boolean; lastSeen: string | null }
@@ -95,6 +98,8 @@ export type AppState = {
   /** Recording a run in the browser: how many actions so far, and the latest one's label */
   recording: { typed: boolean; count: number; last: string | null } | null
   rehearsal: Rehearsal | null
+  /** The last full run of this storyboard, for the timing report and exports */
+  lastRun: RunTimes | null
   /** The AI service for writing lines, and which keys are saved (never the keys) */
   ai: AiInfo
 }
@@ -144,6 +149,8 @@ export type ControlApi = {
   aiTest(s: AiSetup): Promise<AiPing>
   aiRun(req: AiRequest): Promise<AiResult>
   aiCancel(): Promise<void>
+  /** Save an export (script, subtitles, chapters) where the presenter picks */
+  exportFile(ext: 'md' | 'srt' | 'txt', text: string, name: string): Promise<SaveResult>
   /** Characters of the answer so far, while a request runs */
   onAiProgress(cb: (chars: number) => void): () => void
 }

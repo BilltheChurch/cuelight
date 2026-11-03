@@ -21,7 +21,8 @@
     "e2e:ai": "node scripts/e2e-ai.mjs",
     "helper": "node scripts/build-helper.mjs",
     "check:helper": "node scripts/check-helper.mjs",
-    "e2e:native": "node scripts/e2e-native.mjs"
+    "e2e:native": "node scripts/e2e-native.mjs",
+    "e2e:export": "node scripts/e2e-export.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
