@@ -2,8 +2,9 @@
 /**
  * Packages Cuelight for macOS into dist/:
  *
- *   Cuelight-<version>-<arch>-mac.zip   the app, ad-hoc signed (no Developer ID yet, so macOS asks
- *                                       before the first launch: right-click, Open)
+ *   Cuelight-<version>-<arch>-mac.zip   the app, ad-hoc signed (no Developer ID yet, so macOS blocks
+ *                                       the first launch until it is allowed in System Settings,
+ *                                       Privacy & Security, Open Anyway)
  *   Cuelight-<version>-<arch>.dmg       only with --dmg; building one mounts a disk image for a moment
  *   cuelight-extension-<version>.zip    the browser extension, as the Chrome Web Store takes it
  *
@@ -62,7 +63,7 @@ const config = {
     category: 'public.app-category.productivity',
     icon: join(desktop, 'resources/icon.png'),
     target: [{ target: 'zip', arch: [arch] }, ...(process.argv.includes('--dmg') ? [{ target: 'dmg', arch: [arch] }] : [])],
-    // Ad-hoc: enough for Apple silicon to run it; Gatekeeper still asks before the first launch.
+    // Ad-hoc: enough for Apple silicon to run it; Gatekeeper still blocks the first launch.
     identity: '-',
     hardenedRuntime: false,
     notarize: false,
