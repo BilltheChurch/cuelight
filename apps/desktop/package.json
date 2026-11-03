@@ -1,5 +1,6 @@
 {
   "name": "@cuelight/desktop",
+  "productName": "Cuelight",
   "version": "0.1.0",
   "private": true,
   "description": "Cuelight desktop app: capture-proof spotlight overlay, hotkeys, playback, and the local bridge to the browser extension.",

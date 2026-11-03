@@ -8,7 +8,11 @@
  *   --log                                print player events as JSON lines on stdout
  * Environment (development only):
  *   CUELIGHT_CAPTURABLE=1   leave the overlay visible to screen capture (a red badge says so)
- *   CUELIGHT_DEV_TOKEN=...  accept this bridge token without pairing (scripts/ctl.mjs uses it)
+ *   CUELIGHT_CAPTURABLE=docs  the same without the badge, for screenshots in the README
+ *   CUELIGHT_DEV_TOKEN=...  accept this bridge token without pairing (scripts/e2e-web.mjs uses it)
+ *   CUELIGHT_USER_DATA=...  keep settings and pairings in this folder instead (throwaway test runs)
+ *   CUELIGHT_HEADLESS=1     invisible test runs: no windows, no Dock icon, no global hotkeys, and the
+ *                           real cursor is ignored, so whoever is using the machine is not disturbed
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
@@ -39,13 +43,17 @@ const opt = (k: string) => {
 }
 const SELFTEST = flag('--selftest')
 const LOG = flag('--log')
-const CAPTURABLE = !app.isPackaged && process.env.CUELIGHT_CAPTURABLE === '1'
+const CAPTURABLE = !app.isPackaged && (process.env.CUELIGHT_CAPTURABLE === '1' || process.env.CUELIGHT_CAPTURABLE === 'docs')
 const DEV_TOKEN = !app.isPackaged ? process.env.CUELIGHT_DEV_TOKEN : undefined
+const HEADLESS = !app.isPackaged && process.env.CUELIGHT_HEADLESS === '1'
+/** Headless runs feed the player a cursor that never moves, so only page pointer events count. */
+const NO_CURSOR = { x: -1e6, y: -1e6 }
 
 const log = (o: object) => {
   if (LOG) process.stdout.write('CUELIGHT ' + JSON.stringify(o) + '\n')
 }
 
+if (!app.isPackaged && process.env.CUELIGHT_USER_DATA) app.setPath('userData', process.env.CUELIGHT_USER_DATA)
 if (!SELFTEST && !app.requestSingleInstanceLock()) app.exit(0)
 setCuePlatform(process.platform)
 app.setName('Cuelight')
@@ -159,9 +167,12 @@ const HOTKEYS: [string, () => void][] = [
 function onPhase(phase: Player['phase']) {
   const playing = phase !== 'idle'
   if (playing && !ticker) {
-    for (const [acc, fn] of HOTKEYS) if (!globalShortcut.register(acc, fn)) console.warn(`[hotkey] could not register ${acc}`)
-    log({ type: 'hotkeys', registered: HOTKEYS.map(([a]) => [a, globalShortcut.isRegistered(a)]) })
+    if (!HEADLESS) {
+      for (const [acc, fn] of HOTKEYS) if (!globalShortcut.register(acc, fn)) console.warn(`[hotkey] could not register ${acc}`)
+      log({ type: 'hotkeys', registered: HOTKEYS.map(([a]) => [a, globalShortcut.isRegistered(a)]) })
+    }
     ticker = setInterval(() => {
+      if (HEADLESS) return player.tick(NO_CURSOR)
       const p = screen.getCursorScreenPoint()
       player.tick(p)
       overlay.cursor(p)
@@ -271,9 +282,12 @@ function ipc() {
 // ---------------------------------------------------------------- startup
 
 app.whenReady().then(async () => {
+  if (HEADLESS) app.dock?.hide()
   settings = SettingsFile.in(app.getPath('userData'))
   overlay = new OverlayManager({
     capturable: CAPTURABLE,
+    quiet: process.env.CUELIGHT_CAPTURABLE === 'docs',
+    headless: HEADLESS,
     preload: join(import.meta.dirname, '../preload/overlay.cjs'),
     load: (w) => loadPage(w, 'overlay'),
     lang,
@@ -333,20 +347,21 @@ app.whenReady().then(async () => {
   }
 
   ipc()
-  createControl()
+  if (!HEADLESS) createControl()
 
   const file = opt('--open')
   if (file && openStoryboard(resolve(file)) && flag('--play')) player.start(Math.max(0, Number(opt('--from') ?? 1) - 1))
 })
 
 app.on('second-instance', () => {
+  if (HEADLESS) return
   if (control) {
     if (control.isMinimized()) control.restore()
     control.focus()
   } else createControl()
 })
 app.on('activate', () => {
-  if (!control) createControl()
+  if (!control && !HEADLESS) createControl()
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

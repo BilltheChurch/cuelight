@@ -4,7 +4,13 @@
 // every step to the end.
 //
 //   pnpm --filter @cuelight/desktop build && pnpm --filter @cuelight/extension build
-//   CHROMIUM=/path/to/Chromium node scripts/e2e-web.mjs [todomvc|wikipedia-tour] [--zoom 1.25] [--shots <dir>]
+//   CHROMIUM=/path/to/Chromium node scripts/e2e-web.mjs [todomvc|wikipedia-tour] [--zoom 1.25] [--lang en|zh] [--headed] [--shots <dir>]
+//
+// By default the run is invisible: a headless browser, and an app with no windows, no Dock icon
+// and no global hotkeys that ignores the real cursor, so it can run while someone uses the machine.
+// --headed shows the real browser window and overlay (needed for --shots, and to catch window
+// insets such as Edge's, which a headless window does not have). The app always runs with a
+// throwaway settings folder, so test pairings never pile up in your real one.
 //
 // CHROMIUM must be a build that still honours --load-extension (Chromium or Chrome for Testing).
 // To test the browser people actually use, set CHROME instead to a branded Chrome or Edge binary,
@@ -14,9 +20,11 @@
 // loopback, and so the app bridge, always bypasses it.
 //
 // --shots leaves the overlay capturable (debug badge on), raises the test window and saves a grab
-// of it per step, so you can check by eye that the spotlight sits on the element.
+// of it per step, so you can check by eye that the spotlight sits on the element. With --docs the
+// badge stays off (README screenshots); with --recorded the overlay stays protected, so the grabs
+// show what a screen recorder gets.
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -33,17 +41,21 @@ const arg = (k) => {
 const name = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'todomvc'
 const zoom = Number(arg('--zoom') ?? 1)
 const shots = arg('--shots')
+const shotMode = process.argv.includes('--recorded') ? 'recorded' : process.argv.includes('--docs') ? 'docs' : 'debug'
+const headed = process.argv.includes('--headed') || !!shots
 const file = join(root, 'examples', `${name}.json`)
 const sb = JSON.parse(readFileSync(file, 'utf8'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const devToken = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+const userData = mkdtempSync(join(tmpdir(), 'cuelight-e2e-app-'))
+if (arg('--lang')) writeFileSync(join(userData, 'settings.json'), JSON.stringify({ lang: arg('--lang') }))
 
 // ---------------------------------------------------------------- app
 const events = []
 const waiters = []
 const app = spawn(join(root, 'apps/desktop/node_modules/.bin/electron'), ['.', '--log', '--open', file], {
   cwd: join(root, 'apps/desktop'),
-  env: { ...process.env, CUELIGHT_DEV_TOKEN: devToken, CUELIGHT_CAPTURABLE: shots ? '1' : '0' },
+  env: { ...process.env, CUELIGHT_DEV_TOKEN: devToken, CUELIGHT_USER_DATA: userData, CUELIGHT_HEADLESS: headed ? '0' : '1', CUELIGHT_CAPTURABLE: !shots || shotMode === 'recorded' ? '0' : shotMode === 'docs' ? 'docs' : '1' },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
 readline.createInterface({ input: app.stdout }).on('line', (l) => {
@@ -87,6 +99,8 @@ const browserArgs = [
   '--window-size=1360,880',
   '--no-first-run',
   '--no-default-browser-check',
+  // The translate bubble pops up over English pages in a non-English Chrome and covers the shots.
+  '--disable-features=Translate',
   ...(process.env.E2E_PROXY ? [`--proxy-server=${process.env.E2E_PROXY}`] : []),
 ]
 let ctx
@@ -102,8 +116,9 @@ try {
   } else {
     ctx = await chromium.launchPersistentContext(profile, {
       executablePath: process.env.CHROMIUM,
-      headless: false,
+      headless: !headed,
       viewport: null,
+      chromiumSandbox: true,
       args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`, ...browserArgs],
     })
     closeBrowser = () => ctx.close()
@@ -189,13 +204,20 @@ try {
       await sleep(450)
       const b = await windowBounds(page)
       const region = [b.left, b.top, b.width, b.height].join(',')
-      execFileSync('/usr/sbin/screencapture', ['-x', '-R', region, join(shots, `${name}-z${zoom}-${String(n).padStart(2, '0')}.png`)])
+      execFileSync('/usr/sbin/screencapture', ['-x', '-R', region, join(shots, `${name}-z${zoom}-${shotMode}-${String(n).padStart(2, '0')}.png`)])
     }
     const next = waitNext((e) => e.type === 'advance' || (e.type === 'phase' && e.phase === 'done'), 60_000, `step ${n} to finish`)
     if (st.act === 'click' && loc && rect) await loc.click()
     // Read steps only need the cursor inside the light; skip the hit-test, since a neighbour
     // (TodoMVC's filter bar over the counter) may sit on top of the element's centre.
-    else if (st.act === 'read' && loc && rect) await loc.hover({ force: true })
+    else if (st.act === 'read' && loc && rect) {
+      await loc.hover({ force: true })
+      // A real mouse passing over the test window also moves the page pointer; put it back.
+      for (let settledRead = false; !settledRead; ) {
+        settledRead = await Promise.race([next.then(() => true), sleep(700).then(() => false)])
+        if (!settledRead && events.findLast((e) => e.type === 'inside')?.inside === false) await loc.hover({ force: true }).catch(() => {})
+      }
+    }
     else if (st.act === 'wait') {
       const text = /“(.+?)”/.exec(st.how ?? '')?.[1]
       if (text) {
@@ -219,13 +241,14 @@ try {
   await closeBrowser().catch(() => {})
   app.kill()
   rmSync(profile, { recursive: true, force: true })
+  rmSync(userData, { recursive: true, force: true })
 }
 
 if (failures.length) {
   console.error('\nFAIL\n' + failures.map((f) => '  - ' + f).join('\n'))
   process.exit(1)
 }
-console.log(`\nPASS ${name} (zoom ${zoom}): ${sb.steps.length} steps`)
+console.log(`\nPASS ${name} (zoom ${zoom}, ${headed ? 'headed' : 'headless'}): ${sb.steps.length} steps`)
 
 // ---------------------------------------------------------------- helpers
 
@@ -327,8 +350,9 @@ async function settled(page, loc, seq) {
 async function launchBranded(exe) {
   const ctx = await chromium.launchPersistentContext(profile, {
     executablePath: exe,
-    headless: false,
+    headless: !headed,
     viewport: null,
+    chromiumSandbox: true,
     ignoreDefaultArgs: ['--disable-extensions'],
     args: ['--enable-unsafe-extension-debugging', ...browserArgs],
   })

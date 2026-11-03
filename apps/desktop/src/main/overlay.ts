@@ -13,6 +13,10 @@ type Win = { win: BrowserWindow; display: Display; ready: boolean; last: string;
 export type OverlayOptions = {
   /** Debug only: leave the overlay visible to capture, with a warning badge on screen */
   capturable: boolean
+  /** Debug only: no badge and no cursor guide (screenshots for the docs, which leave the cursor out) */
+  quiet?: boolean
+  /** Test runs: never open a window */
+  headless?: boolean
   preload: string
   load: (w: BrowserWindow) => void
   lang: () => Lang
@@ -124,7 +128,7 @@ export class OverlayManager {
     const light = this.light
     let target: number | null = null
     let local: { x: number; y: number } | null = null
-    if (this.active && !this.hidden && light && !this.inside) {
+    if (this.active && !this.hidden && light && !this.inside && !this.o.quiet) {
       const c = center(light)
       const d = screen.getDisplayNearestPoint({ x: Math.round(c.x), y: Math.round(c.y) })
       const b = d.bounds
@@ -149,7 +153,7 @@ export class OverlayManager {
   // ---------------------------------------------------------------- windows
 
   private sync() {
-    const want = this.active || this.pattern !== null
+    const want = (this.active || this.pattern !== null) && !this.o.headless
     const displays = want ? screen.getAllDisplays() : []
     for (const [id, w] of this.wins)
       if (!displays.some((d) => d.id === id)) {
@@ -223,7 +227,7 @@ export class OverlayManager {
         inside: this.inside,
         card: this.active && mine ? this.card : null,
         progress: this.active && mine ? this.progress : null,
-        capturable: !this.protect,
+        capturable: !this.protect && !this.o.quiet,
         capturableLabel: cue(lang, 'capturable'),
         pattern: pat && ([pat[0] - b.x, pat[1] - b.y, pat[2], pat[3]] as Rect),
         topInset: w.display.workArea.y - b.y,
