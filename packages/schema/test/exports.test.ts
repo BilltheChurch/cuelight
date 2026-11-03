@@ -47,7 +47,7 @@ describe('exports', () => {
     expect(md).toContain('## 0:06  2. Click\n\nJust click, no need to speak (2.0 s)\n\n(no line)')
     expect(md).toContain('## 0:18  5. Click\n\nFinish the line, then click (3.0 s)\n\nSave it.\n\nNote: Say it slowly\n')
     expect(toScript(DEMO, timeline(DEMO), 'zh')).toContain('5 步 · 0:22 · 按台词估算')
-    expect(md).not.toMatch(/[*—]/)
+    expect(md).not.toMatch(/[*\u2014]/)
   })
 
   it('writes subtitles that last as long as the line, not the whole step', () => {

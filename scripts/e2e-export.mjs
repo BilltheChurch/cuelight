@@ -107,7 +107,7 @@ try {
   // Real times: the first step took 2 s and a few ms, the third starts 1 s after the second.
   ok(/^1\n00:00:00,000 --> 00:00:02,0\d\d\n/.test(files.srt) && /\n2\n00:00:03,0\d\d --> /.test(files.srt), 'subtitles start with their steps', JSON.stringify(files.srt.slice(0, 60)))
   ok(files.txt.startsWith('0:00 '), 'chapters start at 0:00', JSON.stringify(files.txt))
-  ok(!/[*—]/.test(files.md + files.srt + files.txt), 'no asterisks or em dashes in the exports')
+  ok(!/[*\u2014]/.test(files.md + files.srt + files.txt), 'no asterisks or em dashes in the exports')
 } catch (e) {
   failed++
   console.log('FAIL', e.message)
